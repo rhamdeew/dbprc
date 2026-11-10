@@ -40,8 +40,10 @@ build:
 	cd backend && go build -o bin/arc ./cmd/arc
 	cd frontend && npm run build
 
-dev:              ## api on :8080 + vite on :5173 (proxying /api, /auth, /ws)
+dev:              ## mockoidc :9999 + api :8080 + vite :5173 (vite proxies /api, /auth, /ws)
 	@trap 'kill 0' EXIT; \
+	set -a; . ./.env.dev.example; set +a; \
+	(cd backend && go run ./cmd/mockoidc) & \
 	(cd backend && APP_ENV=dev go run ./cmd/arc) & \
 	(cd frontend && npm run dev) & \
 	wait

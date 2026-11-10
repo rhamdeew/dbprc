@@ -14,6 +14,7 @@ You get work as a board card (ARC-XX). Do **exactly** that card. If the card con
 
 ```
 backend/cmd/arc/            main: wiring only
+backend/cmd/mockoidc/       fake Google for `make dev` and E2E, 127.0.0.1:9999
 backend/internal/config/    env config: every env var is read here and nowhere else
 backend/internal/server/    root router; each feature registers its routes here with one line
 backend/internal/<feature>/ handlers + service + tests for one feature (auth, profile, wall, chat, …)
@@ -34,7 +35,7 @@ make toolchain  # FIRST in a fresh container: pinned Go, golangci-lint, sqlc + d
 make setup      # frontend deps only
 make lint    # golangci-lint + eslint + tsc
 make test    # all unit/integration tests, no Docker or network needed
-make dev     # api :8080 + vite :5173
+make dev     # mockoidc :9999 + api :8080 + vite :5173
 ```
 
 `make lint test` must pass before you push. Always use the make targets: they put the pinned tools (`toolchain.env`, Go from `backend/go.mod`) first on PATH. Do not install Go, golangci-lint or sqlc any other way, and never change their versions unless the card says so.
