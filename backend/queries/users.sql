@@ -36,6 +36,15 @@ SET
 WHERE id = ?
 RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at;
 
+-- name: UpdateUserLogin :one
+UPDATE users
+SET
+    email = ?,
+    name = ?,
+    last_login_at = ?
+WHERE id = ?
+RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at;
+
 -- name: DeleteUser :exec
 DELETE FROM users
 WHERE id = ?;

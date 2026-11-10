@@ -5,11 +5,13 @@ go 1.27.1
 require (
 	github.com/alexedwards/scs/sqlite3store v0.0.0-20251002162104-209de6e426de
 	github.com/alexedwards/scs/v2 v2.9.0
+	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/disintegration/imaging v1.6.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/oauth2-proxy/mockoidc v0.0.0-20261103160011-e06ed0b7cb7f
 	github.com/pressly/goose/v3 v3.30.0
 	golang.org/x/image v0.36.0
+	golang.org/x/oauth2 v0.34.0
 	modernc.org/sqlite v1.62.0
 )
 
