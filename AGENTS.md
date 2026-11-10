@@ -1,6 +1,6 @@
 # AGENTS.md: rules for AI agents working on ARC
 
-ARC (Async Random Coffee) is an internal web app for about 300 colleagues: profiles with a wall, colleague search, and 1-to-1 chats with a **random** teammate. Read `docs/ARCHITECTURE.md` before your first change.
+ARC (Async Random Coffee) is an internal web app for about 300 colleagues: profiles with a wall, colleague search, and 1-to-1 chats with a **random** teammate. Read `docs/ARCHITECTURE.md` and `docs/HANDOFF.md` (current code map, conventions, gotchas) before your first change; HANDOFF.md replaces most code exploration.
 
 You get work as a board card (ARC-XX). Do **exactly** that card. If the card conflicts with this file, follow the card and mention it in the PR.
 
@@ -59,6 +59,7 @@ A card is done when:
 2. Tests cover it: every endpoint (happy path + each error branch in the card), every non-trivial function, every UI state the card mentions.
 3. `make lint test` passes locally and CI is green.
 4. No unrelated changes, no TODOs without a card reference.
+5. `docs/HANDOFF.md` is updated in the same PR (see "How to update" at its end).
 
 Coverage targets: Go ≥ 80%, frontend ≥ 70% (lines).
 
