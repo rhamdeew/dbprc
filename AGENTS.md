@@ -38,7 +38,7 @@ make test    # all unit/integration tests, no Docker or network needed
 make dev     # mockoidc :9999 + api :8080 + vite :5173
 ```
 
-`make lint test` must pass before you push. Always use the make targets: they put the pinned tools (`toolchain.env`, Go from `backend/go.mod`) first on PATH. Do not install Go, golangci-lint or sqlc any other way, and never change their versions unless the card says so.
+`make lint test` must pass before you push. Always use the make targets: they put the pinned tools (`toolchain.env`, Go from `backend/go.mod`) first on PATH and install any missing one automatically (`ensure-*` prerequisites), so `make lint test` works even in a fresh container. Do not install Go, golangci-lint or sqlc any other way, and never change their versions unless the card says so.
 
 ## Conventions
 

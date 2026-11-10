@@ -1,4 +1,5 @@
-.PHONY: toolchain setup lint test build dev images generate test-coverage-gate cover-backend cover-frontend
+.PHONY: toolchain setup lint test build dev images generate test-coverage-gate cover-backend cover-frontend \
+	ensure-go ensure-golangci-lint ensure-sqlc ensure-node-modules
 
 # Pinned tool versions (single source: toolchain.env). Tools installed by `make toolchain`
 # live in ~/.local; put them first on PATH for every target.
@@ -11,7 +12,19 @@ toolchain:        ## install pinned Go, golangci-lint, sqlc + Go modules + npm d
 setup:            ## install frontend deps only
 	cd frontend && npm ci --no-audit --no-fund
 
-lint:             ## all linters + typecheck
+# Safeguard: every target installs the pinned tools it needs before running, so nobody
+# (human or agent) builds with unpinned versions. When a tool is already at the pinned
+# version this is a ~0.1s check; a fresh container installs it once (~15s per tool).
+ensure-go:
+	@scripts/toolchain.sh go >/dev/null
+ensure-golangci-lint:
+	@scripts/toolchain.sh golangci-lint >/dev/null
+ensure-sqlc:
+	@scripts/toolchain.sh sqlc >/dev/null
+ensure-node-modules:
+	@[ -d frontend/node_modules ] || (cd frontend && npm ci --no-audit --no-fund --loglevel=error --update-notifier=false)
+
+lint: ensure-go ensure-golangci-lint ensure-node-modules ## all linters + typecheck
 	cd backend && golangci-lint run ./...
 	cd frontend && npm run lint && npm run typecheck
 
@@ -28,19 +41,19 @@ test: test-coverage-gate cover-backend cover-frontend ## unit/integration tests 
 test-coverage-gate:
 	scripts/coverage-gate_test.sh
 
-cover-backend: test-coverage-gate ## Go tests; fail if statement coverage < GO_COVERAGE_MIN
+cover-backend: ensure-go test-coverage-gate ## Go tests; fail if statement coverage < GO_COVERAGE_MIN
 	cd backend && go test -race -coverprofile=coverage.out ./...
 	scripts/coverage-gate.sh go backend/coverage.out '$(GO_COVERAGE_MIN)' '$(GO_COVER_EXCLUDE_RE)'
 
-cover-frontend: ## Vitest v8; fail if line coverage < FE_COVERAGE_MIN
+cover-frontend: ensure-node-modules ## Vitest v8; fail if line coverage < FE_COVERAGE_MIN
 	cd frontend && npm run test:coverage -- --coverage.reporter=text --coverage.reporter=json-summary --coverage.reportsDirectory=coverage
 	scripts/coverage-gate.sh vitest frontend/coverage/coverage-summary.json '$(FE_COVERAGE_MIN)'
 
-build:
+build: ensure-go ensure-node-modules
 	cd backend && go build -o bin/arc ./cmd/arc
 	cd frontend && npm run build
 
-dev:              ## mockoidc :9999 + api :8080 + vite :5173 (vite proxies /api, /auth, /ws)
+dev: ensure-go ensure-node-modules ## mockoidc :9999 + api :8080 + vite :5173 (vite proxies /api, /auth, /ws)
 	@trap 'kill 0' EXIT; \
 	set -a; . ./.env.dev.example; set +a; \
 	(cd backend && go run ./cmd/mockoidc) & \
@@ -48,8 +61,7 @@ dev:              ## mockoidc :9999 + api :8080 + vite :5173 (vite proxies /api,
 	(cd frontend && npm run dev) & \
 	wait
 
-generate:         ## regenerate sqlc code (idempotent; CI checks the result is committed)
-	@sqlc version 2>/dev/null | grep -qx "v$(SQLC_VERSION)" || scripts/toolchain.sh sqlc
+generate: ensure-sqlc ## regenerate sqlc code (idempotent; CI checks the result is committed)
 	cd backend && sqlc generate
 
 images:           ## build production images locally
