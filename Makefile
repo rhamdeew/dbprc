@@ -1,4 +1,6 @@
-.PHONY: setup lint test build dev images
+.PHONY: setup lint test build dev images generate
+
+SQLC_VERSION := v1.31.1
 
 setup:            ## install frontend deps
 	cd frontend && npm ci --no-audit --no-fund
@@ -20,6 +22,9 @@ dev:              ## api on :8080 + vite on :5173 (proxying /api, /auth, /ws)
 	(cd backend && APP_ENV=dev go run ./cmd/arc) & \
 	(cd frontend && npm run dev) & \
 	wait
+
+generate:         ## regenerate sqlc code (idempotent; CI checks the result is committed)
+	cd backend && go run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
 
 images:           ## build production images locally
 	docker build -t ghcr.io/rhamdeew/dbprc-api:local --build-arg VERSION=local backend

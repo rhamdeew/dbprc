@@ -29,6 +29,17 @@ jobs:
         run: go test -race -coverprofile=coverage.out ./...
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -1 | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: sqlc generated code is committed
+        working-directory: ${{ github.workspace }}
+        run: |
+          make generate
+          dirty=$(git status --porcelain)
+          if [ -n "$dirty" ]; then
+            echo "make generate changed the tree:"
+            echo "$dirty"
+            git diff
+            exit 1
+          fi
 
   frontend:
     runs-on: ubuntu-latest
