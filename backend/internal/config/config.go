@@ -13,19 +13,21 @@ var Version = "dev"
 
 // Config holds runtime settings. Add new fields here; read them only in Load.
 type Config struct {
-	Env     string // dev | test | staging | prod
-	Port    int
-	Version string
-	DataDir string // SQLite and other local state; file is DataDir/arc.db
+	Env       string // dev | test | staging | prod
+	Port      int
+	Version   string
+	DataDir   string // SQLite and other local state; file is DataDir/arc.db
+	UploadDir string // image files written by internal/upload
 }
 
 // Load reads configuration from the environment using getenv (os.Getenv in production).
 func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
-		Env:     valueOr(getenv("APP_ENV"), "dev"),
-		Port:    8080,
-		Version: Version,
-		DataDir: valueOr(getenv("DATA_DIR"), "./data"),
+		Env:       valueOr(getenv("APP_ENV"), "dev"),
+		Port:      8080,
+		Version:   Version,
+		DataDir:   valueOr(getenv("DATA_DIR"), "./data"),
+		UploadDir: valueOr(getenv("UPLOAD_DIR"), "./uploads"),
 	}
 	if p := getenv("PORT"); p != "" {
 		n, err := strconv.Atoi(p)

@@ -3,7 +3,9 @@ module github.com/rhamdeew/dbprc/backend
 go 1.27.1
 
 require (
+	github.com/disintegration/imaging v1.6.2
 	github.com/pressly/goose/v3 v3.30.0
+	golang.org/x/image v0.36.0
 	modernc.org/sqlite v1.62.0
 )
 

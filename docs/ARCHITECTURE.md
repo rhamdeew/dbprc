@@ -44,4 +44,4 @@ The deploy workflow builds images, renders `.env` from the GitHub Environment se
 
 ## Configuration
 
-All env vars are read in `backend/internal/config`. The list is in `AGENTS.md`. The API opens `$DATA_DIR/arc.db` (default directory `./data`) in WAL mode with foreign keys on. `deploy/env/compose.yml` already sets `DATA_DIR=/data`.
+All env vars are read in `backend/internal/config`. The list is in `AGENTS.md`. The API opens `$DATA_DIR/arc.db` (default directory `./data`) in WAL mode with foreign keys on. `deploy/env/compose.yml` already sets `DATA_DIR=/data`. Images are stored under `$UPLOAD_DIR` (default `./uploads`; compose sets `/uploads`) by `internal/upload` and served by the web container, not by the API.
