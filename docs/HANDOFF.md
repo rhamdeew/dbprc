@@ -8,38 +8,43 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - ARC-12 schema: all PoC tables in `backend/migrations/20261110211000_init.sql`; `internal/db` (WAL, write pool of 1 + read pool); sqlc → `internal/db/sqlc` (users only).
 - ARC-18 uploads: `internal/upload` (`Store.Save/Delete`, kinds `Avatar|Photo|Drawing`, `upload.URL`).
 - ARC-30 coverage gates: thresholds in `Makefile` (`GO_COVERAGE_MIN` 80, `FE_COVERAGE_MIN` 70); `scripts/coverage-gate.sh`.
-- ARC-13 test harness: `internal/testutil` (DB, factories, `NewServer`, `LoginAs` stub); `cmd/mockoidc` fake Google on :9999; `make dev` runs mockoidc + api + vite.
+- ARC-13 test harness: `internal/testutil` (DB, factories, `NewServer`, `LoginAs`); `cmd/mockoidc` fake Google on :9999; `make dev` runs mockoidc + api + vite.
 - Tooling: `make` targets self-install pinned tools (`toolchain.env`, `scripts/toolchain.sh`).
+- ARC-14 frontend shell: Mantine theme, routes, `src/api/client.ts` (`api()`), `useMe` calls `GET /api/me`.
+- ARC-16 sessions: `internal/session` (scs + sqlite3store), `httpx.RequireUser` + CSRF, `GET /api/me`, `POST /auth/logout`, `LoginAs` mints a real session.
 
 ## Code map
 
 | Need | Where |
 |---|---|
-| Env config (only place that reads env) | `backend/internal/config/config.go`: `Env, Port, Version, DataDir, UploadDir`; `cfg.DBPath()` |
-| Wiring | `backend/cmd/arc/main.go` opens DB, builds `server.New(cfg, log)` |
-| Routes | `backend/internal/server/server.go` (`http.ServeMux`, Go 1.22 patterns) |
-| DB access | `db.Open(ctx, path)` → `*db.DB` with `Writer()` / `Reader()`; queries via sqlc `backend/queries/<feature>.sql` → `make generate` |
-| Migrations | `backend/migrations/` (goose, embedded, run on start). New file = new UTC timestamp |
-| Images | `upload.New(dir)`; `Save(ctx, r, kind)` returns rel path; serve via `upload.URL(rel)` → `/uploads/...` (Caddy serves it) |
-| Test DB / data | `testutil.NewDB(t)`; `CreateUser(t, db, WithEmail(..))`, `CreatePhoto`, `CreateWallPost`, `CreateChat`, `CreateMessage` (functional options) |
-| HTTP tests | `testutil.NewServer(t, opts...)`, `testutil.LoginAs(t, srv, user)` |
-| Fake Google | `backend/cmd/mockoidc`; issuer `http://localhost:9999/oidc`, client `arc-dev`/`arc-dev-secret`; `POST /_mock/next-user` queues the next identity |
-| Frontend | `frontend/src`: `theme/theme.ts` (2006 palette), `test/render.tsx` (render with Mantine), `pages/` |
+| Env config (only place that reads env) | `internal/config`: `AppBaseURL`, `SessionCookie` (default `arc_sid`), `AdminEmails`; `cfg.IsAdmin`, `config.Origin` |
+| Wiring | `cmd/arc` opens DB, `server.New(cfg, server.Deps{DB, Log})`. `Server.Close` stops session cleanup before the DB closes |
+| Routes | `internal/server`: public `GET /healthz`, `GET /api/version`. `auth.Routes`: `GET /api/me`, `POST /auth/logout` |
+| Middleware | `sessions.LoadAndSave`, then `httpx.CSRF(APP_BASE_URL)`, then `logRequests`. `httpx.RequireUser` on `/api/me` puts `sqlc.User` in the context (`httpx.UserFrom`) |
+| Sessions | `internal/session` on `db.Writer()`. Cookie `arc_sid`, HttpOnly, Secure when `APP_ENV!=dev`, SameSite=Lax. Absolute lifetime 30d, idle 7d (cookie Max-Age follows the idle deadline and slides on each request) |
+| DB access | `db.Open` → `Writer()` / `Reader()`; sqlc `backend/queries/<feature>.sql` → `make generate` |
+| Migrations | `backend/migrations/` (goose, embedded). `sessions` table already matches sqlite3store. New file = new UTC timestamp |
+| Images | `upload.URL(rel)` → `/uploads/...`. `GET /api/me` `avatarUrl` uses it, or null |
+| Test DB / HTTP | `testutil.NewDB`, `NewServer` (sets `AppBaseURL` to the server URL when empty), `Database(t, srv)`, `LoginAs` (Origin = server URL, session cookie when the handler is `*server.Server`), `SessionCookie` |
+| Frontend | `frontend/src`: `theme/theme.ts`, `api/client.ts`, `api/me.ts` (`Me` shape), `app/routes.tsx` |
 
 ## Conventions established
 
 - Tests: table-driven, real temp SQLite via `testutil.NewDB`, never mocks for the DB.
-- New tables/columns: a new migration file, never edit `..._init.sql` (it already ran on staging/prod).
-- sqlc: one query file per feature; commit the generated code (CI fails otherwise).
-- Coverage excludes `internal/db/sqlc` and `cmd/`; keep logic out of `cmd/` so it is tested.
+- New tables/columns: a new migration file, never edit `..._init.sql`.
+- sqlc: one query file per feature; commit generated code.
+- Coverage excludes `internal/db/sqlc` and `cmd/`.
+- API errors: `{"code","message"}`. 401 `unauthenticated`, CSRF 403 `csrf`, unexpected 500 `internal`.
+- Public routes are only `/healthz` and `/api/version`. New `/api` routes go behind `RequireUser`.
 - Use `make` targets only; they pin tool versions.
 
 ## Gotchas / next steps already known
 
-- `server.New(cfg, log)` gets **no DB or upload store yet**. The first API card (ARC-16) must change it to take dependencies (e.g. a `server.Deps` struct) and update `cmd/arc` + `testutil.NewServer`.
-- `testutil.LoginAs` sends no session cookie yet: ARC-16 completes it (see its doc comment).
-- The API does not read `OIDC_*` yet (ARC-15 adds them to `internal/config`).
-- `/healthz` must keep returning `{"status":"ok","version":...}`: the deploy script checks the version.
+- CSRF allows a mutating request when `Origin` equals the origin of `APP_BASE_URL` (path on the base URL is ignored). If `Origin` is absent, only `Sec-Fetch-Site: same-origin` (exact, lowercase) is allowed. `LoginAs` overwrites `Origin` with the test server URL, so a test that sets `AppBaseURL` to something else must send `Origin` itself.
+- `sqlite3store` uses `$1` and `julianday` on `*sql.DB`. It works with `modernc.org/sqlite`. Do not add `mattn/go-sqlite3`. Call `Server.Close` (or `session.Manager.Close`) once or the cleanup goroutine leaks; a second `StopCleanup` from the library would block.
+- A user deleted from `users` is 401 and the session row is removed. An expired `sessions.expiry` is 401.
+- `SESSION_SECRET` is still unused (scs tokens are random, not signed). `OIDC_*` are still unread (ARC-15). `.env.dev.example` sets `APP_BASE_URL=http://localhost:5173` so the vite origin passes CSRF.
+- `/healthz` must keep returning `{"status":"ok","version":...}`.
 
 ## Open questions for the human
 
