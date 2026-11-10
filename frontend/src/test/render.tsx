@@ -1,8 +1,12 @@
-import { MantineProvider } from '@mantine/core';
-import { render as rtlRender } from '@testing-library/react';
-import type { ReactElement } from 'react';
-import { theme } from '../theme/theme';
+/* eslint-disable react-refresh/only-export-components -- test helper, not a fast-refresh module */
+import { render as rtlRender, type RenderOptions } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
+import { Providers } from '../app/providers';
 
-export function render(ui: ReactElement) {
-  return rtlRender(<MantineProvider theme={theme}>{ui}</MantineProvider>);
+function Wrapper({ children }: { children: ReactNode }) {
+  return <Providers>{children}</Providers>;
+}
+
+export function render(ui: ReactElement, options?: Omit<RenderOptions, 'wrapper'>) {
+  return rtlRender(ui, { wrapper: Wrapper, ...options });
 }
