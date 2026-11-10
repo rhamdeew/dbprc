@@ -46,4 +46,6 @@ The deploy workflow builds images, renders `.env` from the GitHub Environment se
 
 All env vars are read in `backend/internal/config`. The list is in `AGENTS.md`. The API opens `$DATA_DIR/arc.db` (default directory `./data`) in WAL mode with foreign keys on. `deploy/env/compose.yml` already sets `DATA_DIR=/data`. Images are stored under `$UPLOAD_DIR` (default `./uploads`; compose sets `/uploads`) by `internal/upload` and served by the web container, not by the API.
 
-`make dev` also starts `backend/cmd/mockoidc` on 127.0.0.1:9999. The issuer is `http://localhost:9999/oidc` (mockoidc's fixed base path). `.env.dev.example` sets `OIDC_ISSUER` and `ALLOWED_DOMAIN` for that process. The API does not read the OIDC variables until the auth card.
+Sessions are server-side (`alexedwards/scs` + the `sessions` table). The cookie is `SESSION_COOKIE` (default `arc_sid`): HttpOnly, SameSite=Lax, Secure unless `APP_ENV=dev`, 30-day absolute lifetime, 7-day idle timeout. `GET /api/me` returns the signed-in user and `isAdmin` when the email is in `ADMIN_EMAILS`. Mutating requests must send `Origin` equal to the origin of `APP_BASE_URL` (or, when `Origin` is absent, `Sec-Fetch-Site: same-origin`).
+
+`make dev` also starts `backend/cmd/mockoidc` on 127.0.0.1:9999. The issuer is `http://localhost:9999/oidc` (mockoidc's fixed base path). `.env.dev.example` sets `OIDC_ISSUER` and `ALLOWED_DOMAIN` for that process. The API does not read the OIDC variables until the auth card. It does read `APP_BASE_URL` (vite's origin, `http://localhost:5173`).

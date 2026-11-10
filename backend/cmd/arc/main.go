@@ -44,9 +44,12 @@ func run(ctx context.Context, log *slog.Logger) error {
 	}()
 	log.Info("database", "path", cfg.DBPath())
 
+	app := server.New(cfg, server.Deps{DB: database, Log: log})
+	defer app.Close()
+
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           server.New(cfg, log),
+		Handler:           app,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

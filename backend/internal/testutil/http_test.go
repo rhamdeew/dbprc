@@ -126,9 +126,21 @@ func TestLoginAsSetsOriginOnMutatingRequests(t *testing.T) {
 
 	app := NewServer(t)
 	authed := LoginAs(t, app, sqlc.User{ID: 1, Email: "ada@example.com"})
+	cookie := SessionCookie(authed)
+	if cookie == nil || cookie.Name != "arc_sid" || cookie.Value == "" {
+		t.Fatalf("app cookie %#v", cookie)
+	}
 	code, body := getJSONClient(t, authed, app.URL+"/healthz")
 	if code != http.StatusOK || body["status"] != "ok" {
 		t.Fatalf("authed healthz %d %v", code, body)
+	}
+	me, err := http.NewRequest(http.MethodGet, app.URL+"/healthz", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := doJSON(t, authed, me)
+	if got["status"] != "ok" {
+		t.Fatalf("healthz with cookie %v", got)
 	}
 }
 

@@ -73,7 +73,7 @@ Coverage targets: Go ≥ 80%, frontend ≥ 70% (lines).
 
 ## Environment variables
 
-Read only in `internal/config`. Current and planned: `APP_ENV` (dev|test|staging|prod), `PORT`, `APP_BASE_URL`, `DATA_DIR` (default `./data`; SQLite file `$DATA_DIR/arc.db`), `UPLOAD_DIR` (default `./uploads`), `SESSION_SECRET`, `SESSION_COOKIE`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `ALLOWED_DOMAIN`, `ADMIN_EMAILS`, `STATIC_DIR` (dev/E2E only). Adding a new variable: document it here and in `docs/ARCHITECTURE.md`, and say in the PR body that `.github/workflows/deploy.yml` needs it (a human wires the secret).
+Read only in `internal/config`. Current and planned: `APP_ENV` (dev|test|staging|prod), `PORT`, `APP_BASE_URL`, `DATA_DIR` (default `./data`; SQLite file `$DATA_DIR/arc.db`), `UPLOAD_DIR` (default `./uploads`), `SESSION_SECRET`, `SESSION_COOKIE` (default `arc_sid`), `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `ALLOWED_DOMAIN`, `ADMIN_EMAILS`, `STATIC_DIR` (dev/E2E only). Read today: `APP_ENV`, `PORT`, `APP_BASE_URL`, `DATA_DIR`, `UPLOAD_DIR`, `SESSION_COOKIE`, `ADMIN_EMAILS`. Not read yet: `SESSION_SECRET` (scs does not use it), `OIDC_*`, `ALLOWED_DOMAIN`, `STATIC_DIR`. Adding a new variable: document it here and in `docs/ARCHITECTURE.md`, and say in the PR body that `.github/workflows/deploy.yml` needs it (a human wires the secret). `APP_BASE_URL` and `ADMIN_EMAILS` are already injected by the deploy workflow.
 
 ## When you are stuck
 
