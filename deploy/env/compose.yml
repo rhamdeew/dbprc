@@ -1,0 +1,29 @@
+# Same file for staging and prod. Differences live only in .env (written by the deploy workflow):
+# COMPOSE_PROJECT_NAME, TAG, WEB_PORT, APP_ENV, BASIC_AUTH_*, OIDC_*, SESSION_SECRET, ADMIN_EMAILS, ALLOWED_DOMAIN, APP_BASE_URL
+services:
+  api:
+    image: ghcr.io/rhamdeew/dbprc-api:${TAG:?TAG is required}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      UPLOAD_DIR: /uploads
+    volumes:
+      - data:/data
+      - uploads:/uploads
+
+  web:
+    image: ghcr.io/rhamdeew/dbprc-web:${TAG:?TAG is required}
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:${WEB_PORT:?WEB_PORT is required}:8080"
+    volumes:
+      - uploads:/uploads:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  data:
+  uploads:

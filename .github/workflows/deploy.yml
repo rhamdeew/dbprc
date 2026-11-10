@@ -1,0 +1,135 @@
+name: Deploy
+
+# staging branch → starc.dbdemo.live, prod branch → arc.dbdemo.live.
+# Secrets/variables live in the GitHub Environment named after the branch (see deploy/setup-github.sh).
+on:
+  push:
+    branches: [staging, prod]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  images:
+    needs: ci
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { name: api, context: backend, file: backend/Dockerfile }
+          - { name: web, context: ., file: deploy/env/web.Dockerfile }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: true
+          build-args: VERSION=${{ github.sha }}
+          tags: ghcr.io/rhamdeew/dbprc-${{ matrix.name }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    needs: images
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref_name }}
+      url: https://${{ vars.APP_HOST }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: SSH setup
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519
+          cat > ~/.ssh/config <<CFG
+          Host vps
+            HostName ${{ vars.SSH_HOST }}
+            Port ${{ vars.SSH_PORT }}
+            User ${{ vars.SSH_USER }}
+            IdentityFile ~/.ssh/id_ed25519
+            IdentitiesOnly yes
+            BatchMode yes
+          CFG
+
+      - name: Render .env
+        env:
+          ENV_NAME: ${{ github.ref_name }}
+          APP_HOST: ${{ vars.APP_HOST }}
+          BASIC_AUTH_USER: ${{ secrets.BASIC_AUTH_USER }}
+          BASIC_AUTH_HASH: ${{ secrets.BASIC_AUTH_HASH }}
+          OIDC_CLIENT_ID: ${{ secrets.OIDC_CLIENT_ID }}
+          OIDC_CLIENT_SECRET: ${{ secrets.OIDC_CLIENT_SECRET }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
+          ALLOWED_DOMAIN: ${{ secrets.ALLOWED_DOMAIN }}
+        run: |
+          case "$ENV_NAME" in
+            prod) WEB_PORT=8081 ;;
+            staging) WEB_PORT=8082 ;;
+            *) echo "unknown env $ENV_NAME"; exit 1 ;;
+          esac
+          umask 077
+          kv() {
+            case "$2" in *"'"*|*$'\n'*) echo "::error::$1 contains a quote or newline"; exit 1 ;; esac
+            printf "%s='%s'\n" "$1" "$2"
+          }
+          {
+            kv COMPOSE_PROJECT_NAME "arc-$ENV_NAME"
+            kv WEB_PORT "$WEB_PORT"
+            kv APP_ENV "$ENV_NAME"
+            kv APP_BASE_URL "https://$APP_HOST"
+            kv BASIC_AUTH_USER "$BASIC_AUTH_USER"
+            kv BASIC_AUTH_HASH "$BASIC_AUTH_HASH"
+            kv OIDC_CLIENT_ID "$OIDC_CLIENT_ID"
+            kv OIDC_CLIENT_SECRET "$OIDC_CLIENT_SECRET"
+            kv SESSION_SECRET "$SESSION_SECRET"
+            kv ADMIN_EMAILS "$ADMIN_EMAILS"
+            kv ALLOWED_DOMAIN "$ALLOWED_DOMAIN"
+          } > .env.new
+
+      - name: Upload files
+        run: |
+          ssh vps 'mkdir -p ~/arc'
+          scp deploy/env/compose.yml deploy/env/deploy.sh .env.new vps:arc/
+          rm -f .env.new
+
+      - name: Deploy ${{ github.sha }}
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh vps 'docker login ghcr.io -u ${{ github.actor }} --password-stdin >/dev/null'
+          set +e
+          ssh vps 'chmod +x ~/arc/deploy.sh && ~/arc/deploy.sh ${{ github.sha }}'
+          rc=$?
+          ssh vps 'docker logout ghcr.io >/dev/null'
+          exit $rc
+
+      - name: Smoke test through the edge
+        run: |
+          body="$(curl -fsS --retry 5 --retry-delay 3 "https://${{ vars.APP_HOST }}/healthz")"
+          echo "$body"
+          [[ "$body" == *'"version":"${{ github.sha }}"'* ]]
+          code="$(curl -s -o /dev/null -w '%{http_code}' "https://${{ vars.APP_HOST }}/")"
+          [[ "$code" == 401 ]] || { echo "expected 401 without Basic Auth, got $code"; exit 1; }
