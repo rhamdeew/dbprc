@@ -16,28 +16,43 @@ var Version = "dev"
 // DefaultSessionCookie is the session cookie name when SESSION_COOKIE is unset.
 const DefaultSessionCookie = "arc_sid"
 
+// DefaultOIDCIssuer is the Google issuer used when OIDC_ISSUER is unset.
+const DefaultOIDCIssuer = "https://accounts.google.com"
+
 // Config holds runtime settings. Add new fields here; read them only in Load.
 type Config struct {
-	Env           string // dev | test | staging | prod
-	Port          int
-	Version       string
-	DataDir       string // SQLite and other local state; file is DataDir/arc.db
-	UploadDir     string // image files written by internal/upload
-	AppBaseURL    string // public origin the browser uses; CSRF compares Origin to it
-	SessionCookie string // session cookie name
-	AdminEmails   []string
+	Env              string // dev | test | staging | prod
+	Port             int
+	Version          string
+	DataDir          string // SQLite and other local state; file is DataDir/arc.db
+	UploadDir        string // image files written by internal/upload
+	AppBaseURL       string // public origin the browser uses; CSRF compares Origin to it
+	SessionCookie    string // session cookie name
+	AdminEmails      []string
+	OIDCIssuer       string // OIDC issuer; ID tokens must use this iss
+	OIDCClientID     string
+	OIDCClientSecret string
+	AllowedDomain    string // Google hosted domain (hd) required on the ID token
 }
 
 // Load reads configuration from the environment using getenv (os.Getenv in production).
 func Load(getenv func(string) string) (Config, error) {
+	issuer, err := oidcIssuer(getenv("OIDC_ISSUER"))
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
-		Env:           valueOr(getenv("APP_ENV"), "dev"),
-		Port:          8080,
-		Version:       Version,
-		DataDir:       valueOr(getenv("DATA_DIR"), "./data"),
-		UploadDir:     valueOr(getenv("UPLOAD_DIR"), "./uploads"),
-		SessionCookie: valueOr(strings.TrimSpace(getenv("SESSION_COOKIE")), DefaultSessionCookie),
-		AdminEmails:   splitEmails(getenv("ADMIN_EMAILS")),
+		Env:              valueOr(getenv("APP_ENV"), "dev"),
+		Port:             8080,
+		Version:          Version,
+		DataDir:          valueOr(getenv("DATA_DIR"), "./data"),
+		UploadDir:        valueOr(getenv("UPLOAD_DIR"), "./uploads"),
+		SessionCookie:    valueOr(strings.TrimSpace(getenv("SESSION_COOKIE")), DefaultSessionCookie),
+		AdminEmails:      splitEmails(getenv("ADMIN_EMAILS")),
+		OIDCIssuer:       issuer,
+		OIDCClientID:     strings.TrimSpace(getenv("OIDC_CLIENT_ID")),
+		OIDCClientSecret: strings.TrimSpace(getenv("OIDC_CLIENT_SECRET")),
+		AllowedDomain:    strings.ToLower(strings.TrimSpace(getenv("ALLOWED_DOMAIN"))),
 	}
 	if raw := strings.TrimSpace(getenv("APP_BASE_URL")); raw != "" {
 		if _, err := Origin(raw); err != nil {
@@ -134,4 +149,23 @@ func valueOr(v, def string) string {
 		return def
 	}
 	return v
+}
+
+// oidcIssuer returns the issuer with one trailing slash removed.
+// An empty value is DefaultOIDCIssuer. The result must match the provider's iss claim.
+func oidcIssuer(raw string) (string, error) {
+	issuer := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if issuer == "" {
+		return DefaultOIDCIssuer, nil
+	}
+	u, err := url.Parse(issuer)
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("invalid OIDC_ISSUER %q", raw)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+	default:
+		return "", fmt.Errorf("invalid OIDC_ISSUER %q", raw)
+	}
+	return issuer, nil
 }

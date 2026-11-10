@@ -9,9 +9,9 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/auth"
 	"github.com/rhamdeew/dbprc/backend/internal/config"
 	"github.com/rhamdeew/dbprc/backend/internal/db"
-	"github.com/rhamdeew/dbprc/backend/internal/db/sqlc"
 	"github.com/rhamdeew/dbprc/backend/internal/httpx"
 	"github.com/rhamdeew/dbprc/backend/internal/session"
+	"github.com/rhamdeew/dbprc/backend/internal/upload"
 )
 
 // Deps are the process-wide collaborators the router needs.
@@ -29,7 +29,8 @@ type Server struct {
 }
 
 // New builds the root handler. deps.DB is required.
-// GET /healthz and GET /api/version are public. GET /api/me requires a session.
+// GET /healthz, GET /api/version, and GET /auth/google/* are public.
+// GET /api/me requires a session.
 func New(cfg config.Config, deps Deps) *Server {
 	if deps.DB == nil {
 		panic("server: nil database")
@@ -54,7 +55,7 @@ func New(cfg config.Config, deps Deps) *Server {
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]string{"version": cfg.Version, "env": cfg.Env})
 	})
-	auth.Routes(mux, cfg, log, sessions, sqlc.New(deps.DB.Reader()))
+	auth.Routes(mux, cfg, log, sessions, deps.DB, upload.New(cfg.UploadDir))
 
 	var handler http.Handler = mux
 	handler = sessions.LoadAndSave(handler)

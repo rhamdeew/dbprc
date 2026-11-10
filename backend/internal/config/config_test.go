@@ -17,20 +17,32 @@ func TestLoad(t *testing.T) {
 		wantErr bool
 		want    Config
 	}{
-		{name: "defaults", env: nil, want: Config{Env: "dev", Port: 8080, Version: "dev", DataDir: "./data", UploadDir: "./uploads", SessionCookie: DefaultSessionCookie}},
+		{name: "defaults", env: nil, want: Config{Env: "dev", Port: 8080, Version: "dev", DataDir: "./data", UploadDir: "./uploads", SessionCookie: DefaultSessionCookie, OIDCIssuer: DefaultOIDCIssuer}},
 		{
 			name: "custom",
 			env: map[string]string{
 				"APP_ENV": "prod", "PORT": "9000", "DATA_DIR": "/data", "UPLOAD_DIR": "/uploads",
 				"APP_BASE_URL": "https://Arc.Example/app", "SESSION_COOKIE": "my_sid",
-				"ADMIN_EMAILS": " Ada@Example.com, , bob@example.com ",
+				"ADMIN_EMAILS":       " Ada@Example.com, , bob@example.com ",
+				"OIDC_ISSUER":        "https://accounts.google.com/",
+				"OIDC_CLIENT_ID":     " arc-client ",
+				"OIDC_CLIENT_SECRET": " secret ",
+				"ALLOWED_DOMAIN":     " Example.COM ",
 			},
 			want: Config{
 				Env: "prod", Port: 9000, Version: "dev", DataDir: "/data", UploadDir: "/uploads",
 				AppBaseURL: "https://Arc.Example/app", SessionCookie: "my_sid",
-				AdminEmails: []string{"Ada@Example.com", "bob@example.com"},
+				AdminEmails:      []string{"Ada@Example.com", "bob@example.com"},
+				OIDCIssuer:       "https://accounts.google.com",
+				OIDCClientID:     "arc-client",
+				OIDCClientSecret: "secret",
+				AllowedDomain:    "example.com",
 			},
 		},
+		{name: "blank issuer", env: map[string]string{"OIDC_ISSUER": "  "}, want: Config{Env: "dev", Port: 8080, Version: "dev", DataDir: "./data", UploadDir: "./uploads", SessionCookie: DefaultSessionCookie, OIDCIssuer: DefaultOIDCIssuer}},
+		{name: "bad issuer", env: map[string]string{"OIDC_ISSUER": "not a url"}, wantErr: true},
+		{name: "issuer ftp", env: map[string]string{"OIDC_ISSUER": "ftp://accounts.google.com"}, wantErr: true},
+		{name: "issuer query", env: map[string]string{"OIDC_ISSUER": "https://accounts.google.com/?x=1"}, wantErr: true},
 		{name: "bad port", env: map[string]string{"PORT": "abc"}, wantErr: true},
 		{name: "port out of range", env: map[string]string{"PORT": "70000"}, wantErr: true},
 		{name: "bad env", env: map[string]string{"APP_ENV": "qa"}, wantErr: true},
