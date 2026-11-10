@@ -1,8 +1,14 @@
-.PHONY: setup lint test build dev images generate
+.PHONY: toolchain setup lint test build dev images generate
 
-SQLC_VERSION := v1.31.1
+# Pinned tool versions (single source: toolchain.env). Tools installed by `make toolchain`
+# live in ~/.local; put them first on PATH for every target.
+include toolchain.env
+export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(PATH)
 
-setup:            ## install frontend deps
+toolchain:        ## install pinned Go, golangci-lint, sqlc + Go modules + npm deps (fresh container: run first)
+	scripts/toolchain.sh
+
+setup:            ## install frontend deps only
 	cd frontend && npm ci --no-audit --no-fund
 
 lint:             ## all linters + typecheck
@@ -24,7 +30,8 @@ dev:              ## api on :8080 + vite on :5173 (proxying /api, /auth, /ws)
 	wait
 
 generate:         ## regenerate sqlc code (idempotent; CI checks the result is committed)
-	cd backend && go run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
+	@sqlc version 2>/dev/null | grep -qx "v$(SQLC_VERSION)" || scripts/toolchain.sh sqlc
+	cd backend && sqlc generate
 
 images:           ## build production images locally
 	docker build -t ghcr.io/rhamdeew/dbprc-api:local --build-arg VERSION=local backend
