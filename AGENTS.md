@@ -70,7 +70,7 @@ Coverage targets: Go ≥ 80%, frontend ≥ 70% (lines).
 
 ## Environment variables
 
-Read only in `internal/config`. Current and planned: `APP_ENV` (dev|test|staging|prod), `PORT`, `APP_BASE_URL`, `DATA_DIR` (default `./data`; SQLite file `$DATA_DIR/arc.db`), `UPLOAD_DIR`, `SESSION_SECRET`, `SESSION_COOKIE`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `ALLOWED_DOMAIN`, `ADMIN_EMAILS`, `STATIC_DIR` (dev/E2E only). Adding a new variable: document it here and in `docs/ARCHITECTURE.md`, and say in the PR body that `.github/workflows/deploy.yml` needs it (a human wires the secret).
+Read only in `internal/config`. Current and planned: `APP_ENV` (dev|test|staging|prod), `PORT`, `APP_BASE_URL`, `DATA_DIR` (default `./data`; SQLite file `$DATA_DIR/arc.db`), `UPLOAD_DIR` (default `./uploads`), `SESSION_SECRET`, `SESSION_COOKIE`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `ALLOWED_DOMAIN`, `ADMIN_EMAILS`, `STATIC_DIR` (dev/E2E only). Adding a new variable: document it here and in `docs/ARCHITECTURE.md`, and say in the PR body that `.github/workflows/deploy.yml` needs it (a human wires the secret).
 
 ## When you are stuck
 

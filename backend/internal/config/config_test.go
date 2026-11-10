@@ -16,8 +16,8 @@ func TestLoad(t *testing.T) {
 		wantErr bool
 		want    Config
 	}{
-		{name: "defaults", env: nil, want: Config{Env: "dev", Port: 8080, Version: "dev", DataDir: "./data"}},
-		{name: "custom", env: map[string]string{"APP_ENV": "prod", "PORT": "9000", "DATA_DIR": "/data"}, want: Config{Env: "prod", Port: 9000, Version: "dev", DataDir: "/data"}},
+		{name: "defaults", env: nil, want: Config{Env: "dev", Port: 8080, Version: "dev", DataDir: "./data", UploadDir: "./uploads"}},
+		{name: "custom", env: map[string]string{"APP_ENV": "prod", "PORT": "9000", "DATA_DIR": "/data", "UPLOAD_DIR": "/uploads"}, want: Config{Env: "prod", Port: 9000, Version: "dev", DataDir: "/data", UploadDir: "/uploads"}},
 		{name: "bad port", env: map[string]string{"PORT": "abc"}, wantErr: true},
 		{name: "port out of range", env: map[string]string{"PORT": "70000"}, wantErr: true},
 		{name: "bad env", env: map[string]string{"APP_ENV": "qa"}, wantErr: true},
