@@ -30,13 +30,14 @@ deploy/, .github/workflows/ infrastructure: do not modify unless the card says s
 ## Commands
 
 ```
-make setup   # frontend deps
+make toolchain  # FIRST in a fresh container: pinned Go, golangci-lint, sqlc + deps into ~/.local (~1 min)
+make setup      # frontend deps only
 make lint    # golangci-lint + eslint + tsc
 make test    # all unit/integration tests, no Docker or network needed
 make dev     # api :8080 + vite :5173
 ```
 
-`make lint test` must pass before you push.
+`make lint test` must pass before you push. Always use the make targets: they put the pinned tools (`toolchain.env`, Go from `backend/go.mod`) first on PATH. Do not install Go, golangci-lint or sqlc any other way, and never change their versions unless the card says so.
 
 ## Conventions
 

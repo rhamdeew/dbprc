@@ -21,9 +21,13 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
+      - name: Pinned tool versions
+        id: versions
+        working-directory: ${{ github.workspace }}
+        run: grep -E "^[A-Z_]+=" toolchain.env >> "$GITHUB_OUTPUT"
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.13.2
+          version: v${{ steps.versions.outputs.GOLANGCI_LINT_VERSION }}
           working-directory: backend
       - name: Test
         run: go test -race -coverprofile=coverage.out ./...
