@@ -24,12 +24,13 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - ARC-26 realtime: `GET /ws` (session, then upgrade), in-memory hub pushes `chat.new` and `message.new`.
 - ARC-27 messenger: `/messenger` and `/messenger/:chatId` (one optional route), random chat, availability, thread, `useRealtime` (backoff 1s→30s).
 - ARC-28 notifications: tab title `(N) ARC` from the messenger chat list; "Enable notifications" asks only on click; a hidden-tab `message.new` / `chat.new` shows a browser Notification (partner name, first 80 chars) that focuses the tab and opens the chat.
+- ARC-29 e2e: `make e2e` (`scripts/e2e.sh`) builds the frontend, starts mockoidc + api with a temp DB and `STATIC_DIR`, then Playwright (contexts A and B via `POST /_mock/next-user`). CI job `e2e` uploads the Playwright report on failure.
 
 ## Code map
 
 | Need | Where |
 |---|---|
-| Env config (only place that reads env) | `internal/config`: `AppBaseURL`, `SessionCookie` (default `arc_sid`), `AdminEmails`, `OIDCIssuer` (default `https://accounts.google.com`), `OIDCClientID`, `OIDCClientSecret`, `AllowedDomain`; `cfg.IsAdmin`, `config.Origin` |
+| Env config (only place that reads env) | `internal/config`: `AppBaseURL`, `SessionCookie` (default `arc_sid`), `AdminEmails`, `OIDCIssuer` (default `https://accounts.google.com`), `OIDCClientID`, `OIDCClientSecret`, `AllowedDomain`, `StaticDir` (dev/test only); `cfg.IsAdmin`, `config.Origin` |
 | Wiring | `cmd/arc` opens DB, `server.New(cfg, server.Deps{DB, Log})`. On shutdown, `Server.Close` (sockets, then session cleanup) runs before `http.Server.Shutdown` and the DB close |
 | Routes | `internal/server`: public `GET /healthz`, `GET /api/version`, `GET /auth/google/*`. `auth.Routes`: `GET /api/me`, `POST /auth/logout`, Google. `profile.Routes`: `GET /api/users/search`, `GET /api/users/{id}`, `PUT /api/me/interests`, `POST /api/me/avatar`, `POST /api/me/photos`, `DELETE /api/me/photos/{id}`. `wall.Routes`: `GET` and `POST /api/users/{id}/wall`, `DELETE /api/wall/{postId}` |
 | Middleware | `sessions.LoadAndSave`, then `httpx.CSRF(APP_BASE_URL)`, then `logRequests`. `httpx.RequireUser` on `/api/me`, profile, wall, chat, and `GET /ws` puts `sqlc.User` in the context (`httpx.UserFrom`). `statusRecorder.Unwrap` so `/ws` can hijack |
@@ -41,6 +42,7 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 | Images | `upload.URL(rel)` → `/uploads/...`. `avatarUrl` uses it, or null. First Google login saves `picture` via `upload.Store` (failure leaves avatar null). `POST /api/me/avatar` replaces the path and deletes the previous file (a missing file is fine). A rejected 6th photo and `DELETE /api/me/photos/{id}` remove the file |
 | Test DB / HTTP | `testutil.NewDB`, `NewServer` (sets `AppBaseURL` to the server URL when empty), `Database(t, srv)`, `LoginAs` (Origin = server URL, session cookie when the handler is `*server.Server`), `SessionCookie` |
 | Frontend | `frontend/src`: `theme/theme.ts`, `api/client.ts` (`api`, `uploadFile`; `silent` skips the error toast), `api/me.ts`, `api/auth.ts`, `api/profile.ts`, `api/wall.ts`, `api/search.ts`, `api/chat.ts`, `api/realtime.ts`, `pages/LoginPage.tsx`, `pages/ProfilePage.tsx` (`/u/:id`, wall in `pages/profile/WallSection.tsx`), `pages/MessengerPage.tsx` (`/messenger/:chatId?`, panes and `notifications.ts` in `pages/messenger/`), `app/routes.tsx`, `components/SearchSlot.tsx` (top-bar colleague search), `components/DrawingPad` |
+| Dev static / e2e | `server.serveDevStatic` when `STATIC_DIR` is set: files as-is, other GET/HEAD → `index.html`; `GET /uploads/` serves `UPLOAD_DIR`. Outside session middleware. `e2e/` Playwright. `make e2e` uses `APP_ENV=dev`, `127.0.0.1:18080` (`E2E_PORT`), mockoidc `:9999` |
 
 ## Conventions established
 
@@ -72,6 +74,7 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - Notifications (`pages/messenger/notifications.ts`): once `GET /api/chats` has loaded on `/messenger`, `document.title` is `(N) ARC` (N is the sum of `unreadCount`) or `ARC` when N is 0, and the previous title is restored on leave. "Enable notifications" renders only while `Notification.permission` is `default` and calls `requestPermission` from that click. A browser `Notification` is created only when `document.hidden` and permission is `granted`: the title is the partner name and the body is the first 80 Unicode code points (`message.body`, or `lastMessage.body` / empty for `chat.new`). Click runs `window.focus()` and opens `/messenger/:chatId`. A `message.new` whose chat is not in the list is skipped. The socket handler never requests permission.
 - WebSocket: `GET /ws` returns 401 JSON before the upgrade when the session is missing. `OriginPatterns` is the host (with port) of `APP_BASE_URL`; the request host is always allowed; any other Origin is 403. Events are `{type, data}`: `chat.new` data is that user's `GET /api/chats` object; `message.new` data is `{chatId, message}` with the REST message. Offline users are skipped. A full send buffer `CloseNow`s that socket. A client data frame closes the socket (server push only). `cmd/arc` calls `Server.Close` before `http.Server.Shutdown`.
 - mockoidc shutdown closes `StateNew` sockets (a Transport spare dial with no request) before `http.Server.Shutdown`, then `Close` if that still times out. `Shutdown` alone waits 5s and races the test deadline.
+- `make e2e` needs ports 18080 and 9999 free (`make dev` holds 9999). `APP_ENV=dev` so the session cookie is not Secure. The browser origin is `APP_BASE_URL` (`http://127.0.0.1:$E2E_PORT`). A human adds the GitHub check `e2e` to required status checks; the workflow file does not do that. Do not set `STATIC_DIR` in deploy.
 
 ## Open questions for the human
 

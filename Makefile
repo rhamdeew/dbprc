@@ -1,5 +1,5 @@
-.PHONY: toolchain setup lint test build dev images generate test-coverage-gate cover-backend cover-frontend \
-	ensure-go ensure-golangci-lint ensure-sqlc ensure-node-modules
+.PHONY: toolchain setup lint test build dev e2e images generate test-coverage-gate cover-backend cover-frontend \
+	ensure-go ensure-golangci-lint ensure-sqlc ensure-node-modules ensure-e2e-modules
 
 # Pinned tool versions (single source: toolchain.env). Tools installed by `make toolchain`
 # live in ~/.local; put them first on PATH for every target.
@@ -24,9 +24,13 @@ ensure-sqlc:
 ensure-node-modules:
 	@[ -d frontend/node_modules ] || (cd frontend && npm ci --no-audit --no-fund --loglevel=error --update-notifier=false)
 
-lint: ensure-go ensure-golangci-lint ensure-node-modules ## all linters + typecheck
+ensure-e2e-modules:
+	@[ -d e2e/node_modules ] || (cd e2e && npm ci --no-audit --no-fund --loglevel=error --update-notifier=false)
+
+lint: ensure-go ensure-golangci-lint ensure-node-modules ensure-e2e-modules ## all linters + typecheck
 	cd backend && golangci-lint run ./...
 	cd frontend && npm run lint && npm run typecheck
+	cd e2e && npm run typecheck
 
 # Coverage gates. Single source of the thresholds; CI enforces them with
 # `make cover-backend` and `make cover-frontend` (also part of `make test`).
@@ -52,6 +56,9 @@ cover-frontend: ensure-node-modules ## Vitest v8; fail if line coverage < FE_COV
 build: ensure-go ensure-node-modules
 	cd backend && go build -o bin/arc ./cmd/arc
 	cd frontend && npm run build
+
+e2e: ensure-go ensure-node-modules ## Playwright: build the frontend, mockoidc + api, no Docker
+	bash scripts/e2e.sh
 
 dev: ensure-go ensure-node-modules ## mockoidc :9999 + api :8080 + vite :5173 (vite proxies /api, /auth, /ws)
 	@trap 'kill 0' EXIT; \

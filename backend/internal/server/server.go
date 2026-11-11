@@ -41,6 +41,7 @@ type Server struct {
 // GET /healthz, GET /api/version, and GET /auth/google/* are public.
 // GET /api/me, the profile routes (including colleague search), the wall routes,
 // the chat routes, and GET /ws require a session.
+// When cfg.StaticDir is set, other GET and HEAD requests serve that directory.
 func New(cfg config.Config, deps Deps) *Server {
 	if deps.DB == nil {
 		panic("server: nil database")
@@ -83,6 +84,9 @@ func New(cfg config.Config, deps Deps) *Server {
 	handler = sessions.LoadAndSave(handler)
 	handler = httpx.CSRF(cfg.AppBaseURL)(handler)
 	handler = logRequests(log, handler)
+	// Outside the session middleware so assets do not touch the database.
+	// No-op unless STATIC_DIR is set (dev and E2E).
+	handler = serveDevStatic(handler, cfg)
 
 	return &Server{handler: handler, sessions: sessions, db: deps.DB, hub: hub}
 }

@@ -50,6 +50,19 @@ func TestLoad(t *testing.T) {
 		{name: "bad base scheme", env: map[string]string{"APP_BASE_URL": "ftp://arc.example"}, wantErr: true},
 		{name: "bad cookie", env: map[string]string{"SESSION_COOKIE": "arc sid"}, wantErr: true},
 		{name: "cookie with semicolon", env: map[string]string{"SESSION_COOKIE": "a;b"}, wantErr: true},
+		{
+			name: "static dir dev",
+			env:  map[string]string{"STATIC_DIR": " /srv "},
+			want: Config{Env: "dev", Port: 8080, Version: "dev", DataDir: "./data", UploadDir: "./uploads", StaticDir: "/srv", SessionCookie: DefaultSessionCookie, OIDCIssuer: DefaultOIDCIssuer},
+		},
+		{
+			name: "static dir test",
+			env:  map[string]string{"APP_ENV": "test", "STATIC_DIR": "web"},
+			want: Config{Env: "test", Port: 8080, Version: "dev", DataDir: "./data", UploadDir: "./uploads", StaticDir: "web", SessionCookie: DefaultSessionCookie, OIDCIssuer: DefaultOIDCIssuer},
+		},
+		{name: "blank static dir prod", env: map[string]string{"APP_ENV": "prod", "STATIC_DIR": "  "}, want: Config{Env: "prod", Port: 8080, Version: "dev", DataDir: "./data", UploadDir: "./uploads", SessionCookie: DefaultSessionCookie, OIDCIssuer: DefaultOIDCIssuer}},
+		{name: "static dir prod", env: map[string]string{"APP_ENV": "prod", "STATIC_DIR": "/srv"}, wantErr: true},
+		{name: "static dir staging", env: map[string]string{"APP_ENV": "staging", "STATIC_DIR": "/srv"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
