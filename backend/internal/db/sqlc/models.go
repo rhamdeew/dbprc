@@ -4,6 +4,14 @@
 
 package sqlc
 
+type Chat struct {
+	ID            int64
+	UserLow       int64
+	UserHigh      int64
+	CreatedAt     string
+	LastMessageAt string
+}
+
 type Interest struct {
 	UserID    int64
 	Hobby     string
@@ -11,6 +19,15 @@ type Interest struct {
 	Movies    string
 	Other     string
 	UpdatedAt string
+}
+
+type Message struct {
+	ID        int64
+	ChatID    int64
+	SenderID  *int64
+	Kind      string
+	Body      string
+	CreatedAt string
 }
 
 type Photo struct {
