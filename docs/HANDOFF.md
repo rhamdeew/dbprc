@@ -13,6 +13,7 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - ARC-14 frontend shell: Mantine theme, routes, `src/api/client.ts` (`api()`), `useMe` calls `GET /api/me`.
 - ARC-16 sessions: `internal/session` (scs + sqlite3store), `httpx.RequireUser` + CSRF, `GET /api/me`, `POST /auth/logout`, `LoginAs` mints a real session.
 - ARC-15 Google sign-in: `GET /auth/google/start` and `GET /auth/google/callback` (PKCE, domain + verified email from the ID token, signed `arc_oidc` cookie).
+- ARC-19 profile API: `GET /api/users/{id}`, `PUT /api/me/interests`, `POST /api/me/avatar`, `POST /api/me/photos` (max 5), `DELETE /api/me/photos/{id}`.
 
 ## Code map
 
@@ -20,12 +21,12 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 |---|---|
 | Env config (only place that reads env) | `internal/config`: `AppBaseURL`, `SessionCookie` (default `arc_sid`), `AdminEmails`, `OIDCIssuer` (default `https://accounts.google.com`), `OIDCClientID`, `OIDCClientSecret`, `AllowedDomain`; `cfg.IsAdmin`, `config.Origin` |
 | Wiring | `cmd/arc` opens DB, `server.New(cfg, server.Deps{DB, Log})`. `Server.Close` stops session cleanup before the DB closes |
-| Routes | `internal/server`: public `GET /healthz`, `GET /api/version`, `GET /auth/google/start`, `GET /auth/google/callback`. `auth.Routes`: those plus `GET /api/me`, `POST /auth/logout` |
-| Middleware | `sessions.LoadAndSave`, then `httpx.CSRF(APP_BASE_URL)`, then `logRequests`. `httpx.RequireUser` on `/api/me` puts `sqlc.User` in the context (`httpx.UserFrom`) |
+| Routes | `internal/server`: public `GET /healthz`, `GET /api/version`, `GET /auth/google/*`. `auth.Routes`: `GET /api/me`, `POST /auth/logout`, Google. `profile.Routes`: `GET /api/users/{id}`, `PUT /api/me/interests`, `POST /api/me/avatar`, `POST /api/me/photos`, `DELETE /api/me/photos/{id}` |
+| Middleware | `sessions.LoadAndSave`, then `httpx.CSRF(APP_BASE_URL)`, then `logRequests`. `httpx.RequireUser` on `/api/me` and profile routes puts `sqlc.User` in the context (`httpx.UserFrom`) |
 | Sessions | `internal/session` on `db.Writer()`. Cookie `arc_sid`, HttpOnly, Secure when `APP_ENV!=dev`, SameSite=Lax. Absolute lifetime 30d, idle 7d (cookie Max-Age follows the idle deadline and slides on each request) |
 | DB access | `db.Open` → `Writer()` / `Reader()`; sqlc `backend/queries/<feature>.sql` → `make generate` |
 | Migrations | `backend/migrations/` (goose, embedded). `sessions` table already matches sqlite3store. New file = new UTC timestamp |
-| Images | `upload.URL(rel)` → `/uploads/...`. `GET /api/me` `avatarUrl` uses it, or null. First Google login saves `picture` via `upload.Store` (failure leaves avatar null) |
+| Images | `upload.URL(rel)` → `/uploads/...`. `avatarUrl` uses it, or null. First Google login saves `picture` via `upload.Store` (failure leaves avatar null). `POST /api/me/avatar` replaces the path and deletes the previous file (a missing file is fine). A rejected 6th photo and `DELETE /api/me/photos/{id}` remove the file |
 | Test DB / HTTP | `testutil.NewDB`, `NewServer` (sets `AppBaseURL` to the server URL when empty), `Database(t, srv)`, `LoginAs` (Origin = server URL, session cookie when the handler is `*server.Server`), `SessionCookie` |
 | Frontend | `frontend/src`: `theme/theme.ts`, `api/client.ts`, `api/me.ts` (`Me` shape), `app/routes.tsx` |
 
@@ -47,6 +48,7 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - `SESSION_SECRET` is still unused (scs tokens are random). The OIDC state cookie `arc_oidc` is HMAC-signed with a process-local key (a restart drops in-flight logins), HttpOnly, SameSite=Lax, Path `/auth/google`, 10 min, Secure unless `APP_ENV=dev`. Bad nonce and bad state both redirect to `/login?error=state`. `hd` is taken from the ID token, not the authorize URL. `next` must be a path starting with `/` and not `//`.
 - `.env.dev.example` sets `APP_BASE_URL=http://localhost:5173` so the vite origin passes CSRF, and points `OIDC_*` / `ALLOWED_DOMAIN` at mockoidc. `OIDC_ISSUER` defaults to Google, so deploy.yml does not set it.
 - `/healthz` must keep returning `{"status":"ok","version":...}`.
+- Profile: interests are trimmed, then limited to 500 characters (Unicode code points). PUT replaces all four fields; an omitted field is stored empty. Name and email change only on Google sign-in. The photo cap is `COUNT` + `INSERT` in one write transaction; the 6th returns 409 `photo_limit` and the new file is discarded. Another user's photo is 404 `not_found`. Other codes: 400 `too_long` / `invalid` / `unsupported_type` / `invalid_image` / `too_large`.
 
 ## Open questions for the human
 
