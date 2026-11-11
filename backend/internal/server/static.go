@@ -38,12 +38,28 @@ func serveDevStatic(next http.Handler, cfg config.Config) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// Same browser policy as deploy/env/Caddyfile, so dev and E2E run under it.
+		// HSTS stays on Caddy: this server is plain HTTP.
+		setSecurityHeaders(w, r)
 		if uploads != nil && uploadPath(r.URL.Path) {
+			w.Header().Set("Content-Disposition", "inline")
 			uploads.ServeHTTP(w, r)
 			return
 		}
 		spa.ServeHTTP(w, r)
 	})
+}
+
+func setSecurityHeaders(w http.ResponseWriter, r *http.Request) {
+	host := r.Host
+	csp := "default-src 'self'; img-src 'self' data: blob:; connect-src 'self'"
+	if host != "" && !strings.ContainsAny(host, " ;\t\"'\\") {
+		csp += " wss://" + host
+	}
+	csp += "; frame-ancestors 'none'"
+	w.Header().Set("Content-Security-Policy", csp)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "same-origin")
 }
 
 func appPath(p string) bool {

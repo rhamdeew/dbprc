@@ -114,7 +114,9 @@ func TestRunListenError(t *testing.T) {
 	}
 	cancel()
 	select {
-	case <-first:
+	case err = <-first:
+		// Shutdown returns a context error. errcheck rejects a bare receive.
+		_ = err
 	case <-time.After(5 * time.Second):
 		t.Fatal("first server did not stop")
 	}

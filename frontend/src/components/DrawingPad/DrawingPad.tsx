@@ -197,6 +197,7 @@ export function DrawingPad({ onChange }: DrawingPadProps) {
         aria-label="Drawing pad"
         width={PAD_WIDTH}
         height={PAD_HEIGHT}
+        className="arc-drawing-pad"
         style={{
           width: PAD_WIDTH,
           height: PAD_HEIGHT,
