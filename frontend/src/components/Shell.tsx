@@ -1,6 +1,6 @@
 import { AppShell, Box, Group, UnstyledButton } from '@mantine/core';
-import { useQueryClient } from '@tanstack/react-query';
-import { NavLink, Outlet, useNavigate } from 'react-router';
+import { NavLink, Outlet } from 'react-router';
+import { useLogout } from '../api/auth';
 import { useMe } from '../api/me';
 import { CONTENT_WIDTH, HEADER, PANEL } from '../theme/theme';
 import { SearchSlot } from './SearchSlot';
@@ -21,19 +21,14 @@ function TopLink({ to, children, end = false }: { to: string; children: string; 
 }
 
 function LogOutButton() {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const logout = useLogout();
   return (
     <UnstyledButton
       type="button"
       fw={600}
       fz={12}
       style={{ color: '#ffffff' }}
-      onClick={() => {
-        // ARC-17 posts /auth/logout before this navigation.
-        queryClient.clear();
-        navigate('/login');
-      }}
+      onClick={() => logout.mutate()}
     >
       Log out
     </UnstyledButton>

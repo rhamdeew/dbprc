@@ -1,9 +1,11 @@
+import { QueryClient } from '@tanstack/react-query';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import type { ReactElement } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { meKey } from '../api/me';
 import { admin, member } from '../test/fixtures';
 import { render } from '../test/render';
 import { server } from '../test/server';
@@ -15,12 +17,13 @@ function LocationEcho() {
   return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
 }
 
-function renderAt(path: string, ui: ReactElement = <AppRoutes />) {
+function renderAt(path: string, ui: ReactElement = <AppRoutes />, queryClient?: QueryClient) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <LocationEcho />
       {ui}
     </MemoryRouter>,
+    { queryClient },
   );
 }
 
@@ -35,6 +38,11 @@ describe('app shell', () => {
 
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/login?next=%2Fmessenger%3Fx%3D1');
+    expect(screen.getByText('Async Random Coffee: meet your teammates when you have time')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sign in with Google' })).toHaveAttribute(
+      'href',
+      '/auth/google/start?next=%2Fmessenger%3Fx%3D1',
+    );
     expect(screen.queryByRole('link', { name: 'ARC' })).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -105,14 +113,49 @@ describe('app shell', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/u/7');
   });
 
-  it('logs out to the login page', async () => {
+  it('logs out, clears the cache, and opens login', async () => {
     const user = userEvent.setup();
-    renderAt('/u/7');
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    let logoutCalls = 0;
+    server.use(
+      http.post('/auth/logout', () => {
+        logoutCalls += 1;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderAt('/u/7', <AppRoutes />, queryClient);
+
     expect(await screen.findByRole('button', { name: 'Log out' })).toBeInTheDocument();
+    expect(queryClient.getQueryData(meKey)).toEqual(member);
     await user.click(screen.getByRole('button', { name: 'Log out' }));
+
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent('/login');
+    expect(screen.getByTestId('location').textContent).toBe('/login');
     expect(screen.queryByRole('link', { name: 'Messenger' })).not.toBeInTheDocument();
+    expect(logoutCalls).toBe(1);
+    expect(queryClient.getQueryCache().getAll()).toEqual([]);
+  });
+
+  it('stays signed in when logout fails', async () => {
+    const user = userEvent.setup();
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    server.use(
+      http.post('/auth/logout', () =>
+        HttpResponse.json({ code: 'internal', message: 'Something went wrong.' }, { status: 500 }),
+      ),
+    );
+    renderAt('/u/7', <AppRoutes />, queryClient);
+
+    await user.click(await screen.findByRole('button', { name: 'Log out' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong.');
+    expect(screen.getByTestId('location').textContent).toBe('/u/7');
+    expect(screen.getByRole('heading', { name: 'Profile' })).toBeInTheDocument();
+    expect(queryClient.getQueryData(meKey)).toEqual(member);
   });
 
   it('shows login without asking for a session', async () => {
