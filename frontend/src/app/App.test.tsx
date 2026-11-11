@@ -6,7 +6,7 @@ import type { ReactElement } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { meKey } from '../api/me';
-import { admin, member } from '../test/fixtures';
+import { admin, member, profileFor } from '../test/fixtures';
 import { render } from '../test/render';
 import { server } from '../test/server';
 import { App } from './App';
@@ -29,7 +29,10 @@ function renderAt(path: string, ui: ReactElement = <AppRoutes />, queryClient?: 
 
 describe('app shell', () => {
   beforeEach(() => {
-    server.use(http.get('/api/me', () => HttpResponse.json(member)));
+    server.use(
+      http.get('/api/me', () => HttpResponse.json(member)),
+      http.get('/api/users/:id', () => HttpResponse.json(profileFor(member))),
+    );
   });
 
   it('sends a signed-out visitor to login and keeps the path', async () => {
@@ -63,8 +66,7 @@ describe('app shell', () => {
   it('hides Admin from a regular member and opens their own profile', async () => {
     renderAt('/');
 
-    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument();
-    expect(screen.getByText('User 7')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/u/7');
     expect(screen.getByRole('link', { name: 'ARC' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'My profile' })).toBeInTheDocument();
@@ -86,7 +88,7 @@ describe('app shell', () => {
 
   it('sends a non-admin away from /admin', async () => {
     renderAt('/admin');
-    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Admin' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
   });
@@ -94,7 +96,7 @@ describe('app shell', () => {
   it('opens messenger from the top bar', async () => {
     const user = userEvent.setup();
     renderAt('/u/7');
-    expect(await screen.findByText('User 7')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Messenger' }));
     expect(await screen.findByRole('heading', { name: 'Messenger' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/messenger');
@@ -109,7 +111,7 @@ describe('app shell', () => {
 
   it('sends an unknown path to the signed-in profile', async () => {
     renderAt('/nope');
-    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/u/7');
   });
 
@@ -154,7 +156,7 @@ describe('app shell', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong.');
     expect(screen.getByTestId('location').textContent).toBe('/u/7');
-    expect(screen.getByRole('heading', { name: 'Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
     expect(queryClient.getQueryData(meKey)).toEqual(member);
   });
 
@@ -176,7 +178,6 @@ describe('app shell', () => {
 
   it('mounts through App', async () => {
     renderAt('/', <App />);
-    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument();
-    expect(screen.getByText('User 7')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
   });
 });
