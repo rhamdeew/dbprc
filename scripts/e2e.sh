@@ -80,6 +80,7 @@ APP_ENV=dev \
   OIDC_CLIENT_ID="arc-dev" \
   OIDC_CLIENT_SECRET="arc-dev-secret" \
   ALLOWED_DOMAIN="example.com" \
+  ADMIN_EMAILS="admin@example.com" \
   SESSION_COOKIE="arc_sid" \
   "$tmpdir/arc" >"$tmpdir/api.log" 2>&1 &
 api_pid=$!
