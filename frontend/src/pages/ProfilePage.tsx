@@ -6,7 +6,7 @@ import { Panel } from '../components/Panel';
 import { AvatarColumn } from './profile/AvatarColumn';
 import { InformationBox } from './profile/InformationBox';
 import { PhotosBox } from './profile/PhotosBox';
-import { WallPlaceholder } from './profile/WallPlaceholder';
+import { WallSection } from './profile/WallSection';
 
 function parseProfileId(raw: string | undefined): number | null {
   if (!raw || !/^[1-9]\d*$/.test(raw)) return null;
@@ -39,7 +39,7 @@ function ProfileView({ profile }: { profile: Profile }) {
           <PhotosBox profile={profile} />
         </Stack>
       </Flex>
-      <WallPlaceholder />
+      <WallSection userId={profile.id} />
     </Stack>
   );
 }
