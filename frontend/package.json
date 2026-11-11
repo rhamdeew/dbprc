@@ -20,7 +20,8 @@
     "perfect-freehand": "1.2.3",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "react-router": "7.18.5"
+    "react-router": "7.18.5",
+    "yet-another-react-lightbox": "3.33.0"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

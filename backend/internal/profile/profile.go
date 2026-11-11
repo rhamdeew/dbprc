@@ -1,5 +1,5 @@
-// Package profile serves a colleague's profile and the signed-in user's
-// avatar, interests, and photos.
+// Package profile serves a colleague's profile, colleague search, and the
+// signed-in user's avatar, interests, and photos.
 package profile
 
 import (
@@ -76,6 +76,7 @@ func Routes(mux *http.ServeMux, log *slog.Logger, sessions *session.Manager, dat
 	}
 	h := &handlers{log: log, db: database, uploads: uploads}
 	guard := httpx.RequireUser(log, sessions.UserID, sqlc.New(database.Reader()).GetUser, sessions.Destroy)
+	mux.Handle("GET /api/users/search", guard(http.HandlerFunc(h.search)))
 	mux.Handle("GET /api/users/{id}", guard(http.HandlerFunc(h.get)))
 	mux.Handle("PUT /api/me/interests", guard(http.HandlerFunc(h.putInterests)))
 	mux.Handle("POST /api/me/avatar", guard(http.HandlerFunc(h.postAvatar)))

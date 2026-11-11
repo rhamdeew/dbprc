@@ -119,6 +119,61 @@ func (q *Queries) ListUserPhotos(ctx context.Context, userID int64) ([]Photo, er
 	return items, nil
 }
 
+const searchUsers = `-- name: SearchUsers :many
+WITH pattern AS (
+    SELECT lower(?2) AS value
+)
+SELECT id, name, email, avatar_path
+FROM users, pattern
+WHERE like(pattern.value, lower(email), char(92))
+   OR like(pattern.value, lower(name), char(92))
+   OR like('% ' || pattern.value, lower(name), char(92))
+ORDER BY lower(name), id
+LIMIT ?1
+`
+
+type SearchUsersParams struct {
+	RowLimit int64
+	Pattern  string
+}
+
+type SearchUsersRow struct {
+	ID         int64
+	Name       string
+	Email      string
+	AvatarPath *string
+}
+
+// pattern is a LIKE prefix: \ % and _ already escaped, with a trailing %.
+// like(pattern, text, escape) is LIKE ... ESCAPE (sqlc's parser rejects the ESCAPE keyword).
+func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]SearchUsersRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchUsers, arg.RowLimit, arg.Pattern)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchUsersRow{}
+	for rows.Next() {
+		var i SearchUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Email,
+			&i.AvatarPath,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateAvatarPath = `-- name: UpdateAvatarPath :one
 UPDATE users
 SET avatar_path = ?

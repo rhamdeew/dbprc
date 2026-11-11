@@ -69,6 +69,8 @@ func run(ctx context.Context, log *slog.Logger) error {
 	}
 
 	log.Info("shutting down")
+	// Close sockets first. Shutdown does not wait for hijacked connections.
+	app.Close()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
