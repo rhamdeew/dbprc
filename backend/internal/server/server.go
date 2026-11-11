@@ -13,6 +13,7 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/profile"
 	"github.com/rhamdeew/dbprc/backend/internal/session"
 	"github.com/rhamdeew/dbprc/backend/internal/upload"
+	"github.com/rhamdeew/dbprc/backend/internal/wall"
 )
 
 // Deps are the process-wide collaborators the router needs.
@@ -31,7 +32,7 @@ type Server struct {
 
 // New builds the root handler. deps.DB is required.
 // GET /healthz, GET /api/version, and GET /auth/google/* are public.
-// GET /api/me and the profile routes require a session.
+// GET /api/me, the profile routes, and the wall routes require a session.
 func New(cfg config.Config, deps Deps) *Server {
 	if deps.DB == nil {
 		panic("server: nil database")
@@ -59,6 +60,7 @@ func New(cfg config.Config, deps Deps) *Server {
 	uploads := upload.New(cfg.UploadDir)
 	auth.Routes(mux, cfg, log, sessions, deps.DB, uploads)
 	profile.Routes(mux, log, sessions, deps.DB, uploads)
+	wall.Routes(mux, log, sessions, deps.DB, uploads)
 
 	var handler http.Handler = mux
 	handler = sessions.LoadAndSave(handler)
