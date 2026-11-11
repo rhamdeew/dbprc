@@ -20,6 +20,8 @@ export class ApiError extends Error implements ApiErrorBody {
 
 export type ApiRequest = Omit<RequestInit, 'body' | 'credentials'> & {
   body?: unknown;
+  /** Skip the error toast. The error is still thrown. */
+  silent?: boolean;
 };
 
 const FALLBACK_MESSAGE = 'Something went wrong';
@@ -66,7 +68,7 @@ async function readError(res: Response, fallbackCode: string): Promise<ApiErrorB
  * 401 sends the browser to `/login?next=<path>`. Any other failure shows a notification.
  */
 export async function api<T>(path: string, init: ApiRequest = {}): Promise<T> {
-  const { body, headers: initHeaders, ...rest } = init;
+  const { body, headers: initHeaders, silent, ...rest } = init;
   const headers = new Headers(initHeaders);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
   const { payload, json } = encodeBody(body);
@@ -81,7 +83,7 @@ export async function api<T>(path: string, init: ApiRequest = {}): Promise<T> {
     body: payload,
   });
 
-  return complete<T>(res);
+  return complete<T>(res, silent === true);
 }
 
 /** POST a multipart `file` field. Uses XHR so the caller can show upload progress. */
@@ -118,7 +120,7 @@ export function uploadPercent(loaded: number, total: number): number | null {
   return Math.min(100, Math.max(0, Math.round((loaded / total) * 100)));
 }
 
-async function complete<T>(res: Response): Promise<T> {
+async function complete<T>(res: Response, silent = false): Promise<T> {
   if (res.status === 401) {
     const { code, message } = await readError(res, 'unauthenticated');
     redirectToLogin();
@@ -127,7 +129,7 @@ async function complete<T>(res: Response): Promise<T> {
 
   if (!res.ok) {
     const { code, message } = await readError(res, 'request_failed');
-    notify(message);
+    if (!silent) notify(message);
     throw new ApiError(res.status, code, message);
   }
 

@@ -33,6 +33,8 @@ describe('app shell', () => {
       http.get('/api/me', () => HttpResponse.json(member)),
       http.get('/api/users/:id', () => HttpResponse.json(profileFor(member))),
       http.get('/api/users/:id/wall', () => HttpResponse.json({ posts: [] })),
+      http.get('/api/chats', () => HttpResponse.json([])),
+      http.get('/api/chats/:id/messages', () => HttpResponse.json({ messages: [] })),
     );
   });
 
@@ -106,7 +108,8 @@ describe('app shell', () => {
   it('opens a chat and sends unknown paths to the profile', async () => {
     renderAt('/messenger/42');
     expect(await screen.findByRole('heading', { name: 'Chat' })).toBeInTheDocument();
-    expect(screen.getByText('Conversation 42')).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: 'Message' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Messenger' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/messenger/42');
   });
 
