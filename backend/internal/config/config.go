@@ -26,6 +26,7 @@ type Config struct {
 	Version          string
 	DataDir          string // SQLite and other local state; file is DataDir/arc.db
 	UploadDir        string // image files written by internal/upload
+	StaticDir        string // built frontend; dev and test only. Empty in staging and prod
 	AppBaseURL       string // public origin the browser uses; CSRF compares Origin to it
 	SessionCookie    string // session cookie name
 	AdminEmails      []string
@@ -47,6 +48,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Version:          Version,
 		DataDir:          valueOr(getenv("DATA_DIR"), "./data"),
 		UploadDir:        valueOr(getenv("UPLOAD_DIR"), "./uploads"),
+		StaticDir:        strings.TrimSpace(getenv("STATIC_DIR")),
 		SessionCookie:    valueOr(strings.TrimSpace(getenv("SESSION_COOKIE")), DefaultSessionCookie),
 		AdminEmails:      splitEmails(getenv("ADMIN_EMAILS")),
 		OIDCIssuer:       issuer,
@@ -74,6 +76,11 @@ func Load(getenv func(string) string) (Config, error) {
 	case "dev", "test", "staging", "prod":
 	default:
 		return Config{}, fmt.Errorf("invalid APP_ENV %q", cfg.Env)
+	}
+	// The web container serves the frontend in staging and prod. STATIC_DIR
+	// would skip that and the Basic Auth in front of it.
+	if cfg.StaticDir != "" && cfg.Env != "dev" && cfg.Env != "test" {
+		return Config{}, fmt.Errorf("STATIC_DIR is only allowed when APP_ENV is dev or test")
 	}
 	return cfg, nil
 }

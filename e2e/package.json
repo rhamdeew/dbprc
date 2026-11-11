@@ -1,0 +1,14 @@
+{
+  "name": "arc-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "26.6.6",
+    "typescript": "6.0.3"
+  }
+}

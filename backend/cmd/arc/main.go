@@ -56,6 +56,9 @@ func run(ctx context.Context, log *slog.Logger) error {
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("listening", "addr", srv.Addr, "env", cfg.Env, "version", cfg.Version)
+		if cfg.StaticDir != "" {
+			log.Info("static", "dir", cfg.StaticDir, "uploads", cfg.UploadDir)
+		}
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
