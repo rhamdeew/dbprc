@@ -4,12 +4,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ApiError } from '../api/client';
-import { parseChatId, useChats, useSetAvailability, useStartRandomChat } from '../api/chat';
+import { chatsKey, parseChatId, useChats, useSetAvailability, useStartRandomChat, type ChatSummary } from '../api/chat';
 import { meKey, useMe, type Me } from '../api/me';
 import { useRealtime } from '../api/realtime';
 import { Panel } from '../components/Panel';
 import { ChatList } from './messenger/ChatList';
+import { EnableNotificationsButton } from './messenger/EnableNotificationsButton';
 import { MessageThread } from './messenger/MessageThread';
+import { notifyIncoming, useChatListTitle } from './messenger/notifications';
 
 const unavailableHint = 'Turn availability on to start a random chat.';
 const nobodyNotice = 'Nobody is available for a random chat right now. Try again in a little while.';
@@ -25,7 +27,12 @@ export function MessengerPage() {
   const random = useStartRandomChat();
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<string | null>(null);
-  useRealtime(chatId);
+  useChatListTitle(chats.data);
+  useRealtime(chatId, (event) => {
+    notifyIncoming(event, queryClient.getQueryData<ChatSummary[]>(chatsKey), (id) => {
+      navigate(`/messenger/${id}`);
+    });
+  });
 
   const available = me.data?.available ?? false;
   const showUnavailable = me.data !== undefined && !available;
@@ -103,6 +110,7 @@ export function MessengerPage() {
                 availability.mutate(event.currentTarget.checked);
               }}
             />
+            <EnableNotificationsButton />
             {chats.isPending ? <Loader color="arcBlue" aria-label="Loading chats" /> : null}
             {chats.isError ? <Text>{chats.error instanceof ApiError ? chats.error.message : 'Could not load chats.'}</Text> : null}
             {chats.data ? <ChatList chats={chats.data} activeId={chatId} /> : null}
