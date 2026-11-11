@@ -15,6 +15,7 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - ARC-15 Google sign-in: `GET /auth/google/start` and `GET /auth/google/callback` (PKCE, domain + verified email from the ID token, signed `arc_oidc` cookie).
 - ARC-19 profile API: `GET /api/users/{id}`, `PUT /api/me/interests`, `POST /api/me/avatar`, `POST /api/me/photos` (max 5), `DELETE /api/me/photos/{id}`.
 - ARC-21 wall API: `GET`/`POST /api/users/{id}/wall`, `DELETE /api/wall/{postId}`. Replies flatten to the root. Anonymous `author` is filled only for the wall owner.
+- ARC-22 drawing pad: `frontend/src/components/DrawingPad` (`strokes.ts` + `perfect-freehand`; PNG blob per finished stroke).
 
 ## Code map
 
@@ -29,7 +30,7 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 | Migrations | `backend/migrations/` (goose, embedded). `sessions` table already matches sqlite3store. New file = new UTC timestamp |
 | Images | `upload.URL(rel)` → `/uploads/...`. `avatarUrl` uses it, or null. First Google login saves `picture` via `upload.Store` (failure leaves avatar null). `POST /api/me/avatar` replaces the path and deletes the previous file (a missing file is fine). A rejected 6th photo and `DELETE /api/me/photos/{id}` remove the file |
 | Test DB / HTTP | `testutil.NewDB`, `NewServer` (sets `AppBaseURL` to the server URL when empty), `Database(t, srv)`, `LoginAs` (Origin = server URL, session cookie when the handler is `*server.Server`), `SessionCookie` |
-| Frontend | `frontend/src`: `theme/theme.ts`, `api/client.ts`, `api/me.ts` (`Me` shape), `app/routes.tsx` |
+| Frontend | `frontend/src`: `theme/theme.ts`, `api/client.ts`, `api/me.ts` (`Me` shape), `app/routes.tsx`, `components/DrawingPad` (`onChange` PNG blob; not wired to the wall yet) |
 
 ## Conventions established
 
@@ -51,6 +52,7 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - `/healthz` must keep returning `{"status":"ok","version":...}`.
 - Profile: interests are trimmed, then limited to 500 characters (Unicode code points). PUT replaces all four fields; an omitted field is stored empty. Name and email change only on Google sign-in. The photo cap is `COUNT` + `INSERT` in one write transaction; the 6th returns 409 `photo_limit` and the new file is discarded. Another user's photo is 404 `not_found`. Other codes: 400 `too_long` / `invalid` / `unsupported_type` / `invalid_image` / `too_large`.
 - Wall: `GET` returns `{posts}` (roots newest first by `created_at`, then `id`). `limit` defaults to 20 and must be 1–100. `before` is a root post id on that wall (exclusive); a reply or another wall is 404. Each root includes every reply, oldest first. `POST` is multipart: `body` trimmed to ≤ 2000 runes and/or a PNG `drawing`, `anonymous` (`true`/`false`/`1`/`0`/`yes`/`no`/`on`/`off`), optional `parentId`. A reply's `parent_id` is always the root. `author` is null on anonymous posts unless the viewer owns the wall (`isAnonymous` stays true). Responses never include `author_id`. `canDelete` is true only for the wall owner. `DELETE` is 404 for everyone else; a root delete cascades replies and removes drawing files after commit.
+- Drawing pad: 400×200 CSS pixels, bitmap × `devicePixelRatio`, white `#ffffff`, `touch-action: none`. Colors `#000` `#3b5998` `#d93025` `#188038`. Brushes 4 and 12 (card did not specify diameters). `onChange` runs after pointerup, pointercancel, undo, and clear (`null` when no finished strokes), not on mount or mid-stroke. Mouse pressure 0.5 is simulated; other pressure is kept. Undo drops the last finished stroke.
 
 ## Open questions for the human
 
