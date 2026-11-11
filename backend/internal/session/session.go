@@ -129,3 +129,21 @@ func (m *Manager) Mint(ctx context.Context, userID int64) (*http.Cookie, error) 
 		Expires:  expiry,
 	}, nil
 }
+
+// SessionUserID reads the uid stored in an scs session blob.
+// ok is false when the blob is empty, not a session, or has no positive uid.
+// The sessions table has no user column, so a delete has to find rows this way.
+func SessionUserID(data []byte) (int64, bool) {
+	if len(data) == 0 {
+		return 0, false
+	}
+	_, values, err := (scs.GobCodec{}).Decode(data)
+	if err != nil || values == nil {
+		return 0, false
+	}
+	id, ok := values[userIDKey].(int64)
+	if !ok || id <= 0 {
+		return 0, false
+	}
+	return id, true
+}
