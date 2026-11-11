@@ -4,6 +4,22 @@
 
 package sqlc
 
+type Interest struct {
+	UserID    int64
+	Hobby     string
+	Music     string
+	Movies    string
+	Other     string
+	UpdatedAt string
+}
+
+type Photo struct {
+	ID        int64
+	UserID    int64
+	Path      string
+	CreatedAt string
+}
+
 type User struct {
 	ID          int64
 	GoogleSub   string
