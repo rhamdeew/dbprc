@@ -35,7 +35,7 @@ type Server struct {
 
 // New builds the root handler. deps.DB is required.
 // GET /healthz, GET /api/version, and GET /auth/google/* are public.
-// GET /api/me, the profile routes, the wall routes, and the chat routes require a session.
+// GET /api/me, the profile routes (including colleague search), the wall routes, and the chat routes require a session.
 func New(cfg config.Config, deps Deps) *Server {
 	if deps.DB == nil {
 		panic("server: nil database")

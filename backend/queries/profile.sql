@@ -40,3 +40,17 @@ UPDATE users
 SET avatar_path = ?
 WHERE id = ?
 RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at;
+
+-- name: SearchUsers :many
+-- pattern is a LIKE prefix: \ % and _ already escaped, with a trailing %.
+-- like(pattern, text, escape) is LIKE ... ESCAPE (sqlc's parser rejects the ESCAPE keyword).
+WITH pattern AS (
+    SELECT lower(sqlc.arg('pattern')) AS value
+)
+SELECT id, name, email, avatar_path
+FROM users, pattern
+WHERE like(pattern.value, lower(email), char(92))
+   OR like(pattern.value, lower(name), char(92))
+   OR like('% ' || pattern.value, lower(name), char(92))
+ORDER BY lower(name), id
+LIMIT sqlc.arg('row_limit');
