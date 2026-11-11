@@ -32,6 +32,7 @@ describe('app shell', () => {
     server.use(
       http.get('/api/me', () => HttpResponse.json(member)),
       http.get('/api/users/:id', () => HttpResponse.json(profileFor(member))),
+      http.get('/api/users/:id/wall', () => HttpResponse.json({ posts: [] })),
     );
   });
 

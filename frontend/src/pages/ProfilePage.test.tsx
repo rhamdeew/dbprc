@@ -29,7 +29,10 @@ function renderProfile(id: string) {
 }
 
 function mockProfile(profile: Profile) {
-  server.use(http.get('/api/users/:id', () => HttpResponse.json(profile)));
+  server.use(
+    http.get('/api/users/:id', () => HttpResponse.json(profile)),
+    http.get('/api/users/:id/wall', () => HttpResponse.json({ posts: [] })),
+  );
 }
 
 function imageFile(name = 'pic.png') {
@@ -63,7 +66,8 @@ describe('profile page', () => {
     expect(screen.getByText('chess')).toBeInTheDocument();
     expect(screen.getAllByText('Not set').length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { name: 'Wall' })).toBeInTheDocument();
-    expect(screen.getByText('Posts will show up here.')).toBeInTheDocument();
+    expect(await screen.findByText('No posts yet.')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Write on this wall' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /chat/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /chat/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/start chat/i)).not.toBeInTheDocument();
