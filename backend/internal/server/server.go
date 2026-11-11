@@ -2,31 +2,97 @@
 package server
 
 import (
-	"encoding/json"
+	"context"
 	"log/slog"
 	"net/http"
 
+	"github.com/rhamdeew/dbprc/backend/internal/auth"
+	"github.com/rhamdeew/dbprc/backend/internal/chat"
 	"github.com/rhamdeew/dbprc/backend/internal/config"
+	"github.com/rhamdeew/dbprc/backend/internal/db"
+	"github.com/rhamdeew/dbprc/backend/internal/httpx"
+	"github.com/rhamdeew/dbprc/backend/internal/profile"
+	"github.com/rhamdeew/dbprc/backend/internal/session"
+	"github.com/rhamdeew/dbprc/backend/internal/upload"
+	"github.com/rhamdeew/dbprc/backend/internal/wall"
 )
 
-// New returns the root HTTP handler.
-func New(cfg config.Config, log *slog.Logger) http.Handler {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": cfg.Version})
-	})
-	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"version": cfg.Version, "env": cfg.Env})
-	})
-
-	return logRequests(log, mux)
+// Deps are the process-wide collaborators the router needs.
+type Deps struct {
+	DB  *db.DB
+	Log *slog.Logger
+	// ChatNotifier receives chat events after they commit. Nil becomes chat.NopNotifier.
+	ChatNotifier chat.Notifier
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+// Server is the root HTTP handler. Close stops the session cleanup goroutine;
+// call it before closing the database.
+type Server struct {
+	handler  http.Handler
+	sessions *session.Manager
+	db       *db.DB
+}
+
+// New builds the root handler. deps.DB is required.
+// GET /healthz, GET /api/version, and GET /auth/google/* are public.
+// GET /api/me, the profile routes, the wall routes, and the chat routes require a session.
+func New(cfg config.Config, deps Deps) *Server {
+	if deps.DB == nil {
+		panic("server: nil database")
+	}
+	log := deps.Log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	sessions := session.New(deps.DB.Writer(), session.Settings{
+		CookieName: cfg.SessionCookie,
+		Secure:     cfg.Env != "dev",
+	}, log)
+	sessions.ErrorFunc = func(w http.ResponseWriter, _ *http.Request, err error) {
+		log.Error("session", "err", err)
+		httpx.WriteError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": cfg.Version})
+	})
+	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"version": cfg.Version, "env": cfg.Env})
+	})
+	uploads := upload.New(cfg.UploadDir)
+	auth.Routes(mux, cfg, log, sessions, deps.DB, uploads)
+	profile.Routes(mux, log, sessions, deps.DB, uploads)
+	wall.Routes(mux, log, sessions, deps.DB, uploads)
+	chat.Routes(mux, log, sessions, deps.DB, deps.ChatNotifier)
+
+	var handler http.Handler = mux
+	handler = sessions.LoadAndSave(handler)
+	handler = httpx.CSRF(cfg.AppBaseURL)(handler)
+	handler = logRequests(log, handler)
+
+	return &Server{handler: handler, sessions: sessions, db: deps.DB}
+}
+
+// ServeHTTP implements http.Handler.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.handler.ServeHTTP(w, r)
+}
+
+// Close stops the session store's cleanup goroutine.
+func (s *Server) Close() {
+	if s == nil {
+		return
+	}
+	s.sessions.Close()
+}
+
+// DB is the database this server uses.
+func (s *Server) DB() *db.DB { return s.db }
+
+// MintSession inserts a session for userID and returns its cookie.
+func (s *Server) MintSession(ctx context.Context, userID int64) (*http.Cookie, error) {
+	return s.sessions.Mint(ctx, userID)
 }
 
 type statusRecorder struct {

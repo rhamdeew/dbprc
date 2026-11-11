@@ -13,31 +13,45 @@ import (
 	"time"
 
 	"github.com/rhamdeew/dbprc/backend/internal/config"
+	"github.com/rhamdeew/dbprc/backend/internal/db"
 	"github.com/rhamdeew/dbprc/backend/internal/server"
 )
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	if err := run(log); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(log *slog.Logger) error {
+func run(ctx context.Context, log *slog.Logger) error {
 	cfg, err := config.FromOS()
 	if err != nil {
 		return err
 	}
 
+	database, err := db.Open(ctx, cfg.DBPath())
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := database.Close(); cerr != nil {
+			log.Error("close database", "err", cerr)
+		}
+	}()
+	log.Info("database", "path", cfg.DBPath())
+
+	app := server.New(cfg, server.Deps{DB: database, Log: log})
+	defer app.Close()
+
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           server.New(cfg, log),
+		Handler:           app,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	errCh := make(chan error, 1)
 	go func() {

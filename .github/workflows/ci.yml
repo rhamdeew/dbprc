@@ -21,14 +21,29 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
+      - name: Pinned tool versions
+        id: versions
+        working-directory: ${{ github.workspace }}
+        run: grep -E "^[A-Z_]+=" toolchain.env >> "$GITHUB_OUTPUT"
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.13.2
+          version: v${{ steps.versions.outputs.GOLANGCI_LINT_VERSION }}
           working-directory: backend
-      - name: Test
-        run: go test -race -coverprofile=coverage.out ./...
-      - name: Coverage summary
-        run: go tool cover -func=coverage.out | tail -1 | tee -a "$GITHUB_STEP_SUMMARY"
+      # Thresholds live in the Makefile (GO_COVERAGE_MIN). Job name stays `backend`.
+      - name: Test and coverage
+        working-directory: ${{ github.workspace }}
+        run: make cover-backend
+      - name: sqlc generated code is committed
+        working-directory: ${{ github.workspace }}
+        run: |
+          make generate
+          dirty=$(git status --porcelain)
+          if [ -n "$dirty" ]; then
+            echo "make generate changed the tree:"
+            echo "$dirty"
+            git diff
+            exit 1
+          fi
 
   frontend:
     runs-on: ubuntu-latest
@@ -45,7 +60,10 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm run test:coverage
+      # Thresholds live in the Makefile (FE_COVERAGE_MIN). Job name stays `frontend`.
+      - name: Test and coverage
+        working-directory: ${{ github.workspace }}
+        run: make cover-frontend
       - run: npm run build
 
   docker:

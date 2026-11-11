@@ -44,4 +44,10 @@ The deploy workflow builds images, renders `.env` from the GitHub Environment se
 
 ## Configuration
 
-All env vars are read in `backend/internal/config`. The list is in `AGENTS.md`.
+All env vars are read in `backend/internal/config`. The list is in `AGENTS.md`. The API opens `$DATA_DIR/arc.db` (default directory `./data`) in WAL mode with foreign keys on. `deploy/env/compose.yml` already sets `DATA_DIR=/data`. Images are stored under `$UPLOAD_DIR` (default `./uploads`; compose sets `/uploads`) by `internal/upload` and served by the web container, not by the API.
+
+Sessions are server-side (`alexedwards/scs` + the `sessions` table). The cookie is `SESSION_COOKIE` (default `arc_sid`): HttpOnly, SameSite=Lax, Secure unless `APP_ENV=dev`, 30-day absolute lifetime, 7-day idle timeout. `GET /api/me` returns the signed-in user and `isAdmin` when the email is in `ADMIN_EMAILS`. Mutating requests must send `Origin` equal to the origin of `APP_BASE_URL` (or, when `Origin` is absent, `Sec-Fetch-Site: same-origin`).
+
+Sign-in is Google OIDC: `GET /auth/google/start` redirects to the issuer with PKCE, nonce, and `hd=ALLOWED_DOMAIN`. `GET /auth/google/callback` checks the ID token (`coreos/go-oidc`: audience, issuer, nonce) and accepts it only when `email_verified` is true and `hd` equals `ALLOWED_DOMAIN` (the claim, not the authorize URL). The user is upserted by `sub` (email, name, `last_login_at`). The first login stores `picture` as the avatar through `internal/upload` when the download works. The browser is sent to `next` only when that value is a path starting with `/` and not `//`; otherwise `/`. Failures redirect to `/login?error=domain|unverified|state|provider`. State, nonce, and the PKCE verifier sit in the `arc_oidc` cookie for 10 minutes.
+
+`make dev` also starts `backend/cmd/mockoidc` on 127.0.0.1:9999. The issuer is `http://localhost:9999/oidc` (mockoidc's fixed base path). `.env.dev.example` sets `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `ALLOWED_DOMAIN` for that process, and `APP_BASE_URL` to vite's origin (`http://localhost:5173`).
