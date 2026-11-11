@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/rhamdeew/dbprc/backend/internal/auth"
+	"github.com/rhamdeew/dbprc/backend/internal/chat"
 	"github.com/rhamdeew/dbprc/backend/internal/config"
 	"github.com/rhamdeew/dbprc/backend/internal/db"
 	"github.com/rhamdeew/dbprc/backend/internal/httpx"
@@ -20,6 +21,8 @@ import (
 type Deps struct {
 	DB  *db.DB
 	Log *slog.Logger
+	// ChatNotifier receives chat events after they commit. Nil becomes chat.NopNotifier.
+	ChatNotifier chat.Notifier
 }
 
 // Server is the root HTTP handler. Close stops the session cleanup goroutine;
@@ -32,7 +35,7 @@ type Server struct {
 
 // New builds the root handler. deps.DB is required.
 // GET /healthz, GET /api/version, and GET /auth/google/* are public.
-// GET /api/me, the profile routes, and the wall routes require a session.
+// GET /api/me, the profile routes, the wall routes, and the chat routes require a session.
 func New(cfg config.Config, deps Deps) *Server {
 	if deps.DB == nil {
 		panic("server: nil database")
@@ -61,6 +64,7 @@ func New(cfg config.Config, deps Deps) *Server {
 	auth.Routes(mux, cfg, log, sessions, deps.DB, uploads)
 	profile.Routes(mux, log, sessions, deps.DB, uploads)
 	wall.Routes(mux, log, sessions, deps.DB, uploads)
+	chat.Routes(mux, log, sessions, deps.DB, deps.ChatNotifier)
 
 	var handler http.Handler = mux
 	handler = sessions.LoadAndSave(handler)
