@@ -369,18 +369,31 @@ func TestWallPagination(t *testing.T) {
 	database := testutil.Database(t, srv)
 	owner := testutil.CreateUser(t, database, testutil.WithName("Owner"))
 	author := testutil.CreateUser(t, database, testutil.WithName("Ada"))
-	client := testutil.LoginAs(t, srv, author)
 	ownerClient := testutil.LoginAs(t, srv, owner)
 
+	// Inserted directly: 21 HTTP posts would trip the 20/min wall limit.
 	ids := make([]int64, 0, 21)
 	for i := range 21 {
-		post, _ := mustPost(t, client, wallURL(srv, owner.ID), fields{body: "n" + strconv.Itoa(i), bodySet: true})
+		post := testutil.CreateWallPost(t, database,
+			testutil.WithWallOwner(owner.ID),
+			testutil.WithAuthor(author.ID),
+			testutil.WithBody("n"+strconv.Itoa(i)),
+		)
 		ids = append(ids, post.ID)
 	}
 	oldest := ids[0]
-	reply, _ := mustPost(t, client, wallURL(srv, owner.ID), fields{body: "reply-old", bodySet: true, parent: itoa(oldest), parentSet: true})
+	reply := testutil.CreateWallPost(t, database,
+		testutil.WithWallOwner(owner.ID),
+		testutil.WithAuthor(author.ID),
+		testutil.WithBody("reply-old"),
+		testutil.WithParent(oldest),
+	)
 	other := testutil.CreateUser(t, database, testutil.WithName("Bea"))
-	elsewhere, _ := mustPost(t, client, wallURL(srv, other.ID), fields{body: "elsewhere", bodySet: true})
+	elsewhere := testutil.CreateWallPost(t, database,
+		testutil.WithWallOwner(other.ID),
+		testutil.WithAuthor(author.ID),
+		testutil.WithBody("elsewhere"),
+	)
 
 	_, page, _ := getWall(t, ownerClient, wallURL(srv, owner.ID))
 	if len(page.Posts) != 20 || page.Posts[0].ID != ids[20] || page.Posts[19].ID != ids[1] {
@@ -500,6 +513,14 @@ func TestWallValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertAPIError(t, res, http.StatusBadRequest, "invalid")
+}
+
+func TestWallAnonymousAndOversize(t *testing.T) {
+	srv, _ := newWallServer(t)
+	database := testutil.Database(t, srv)
+	owner := testutil.CreateUser(t, database, testutil.WithName("Owner"))
+	client := testutil.LoginAs(t, srv, owner)
+	url := wallURL(srv, owner.ID)
 
 	for _, anon := range []string{"true", "TRUE", "1", "yes", "on"} {
 		post, _ := mustPost(t, client, url, fields{body: anon, bodySet: true, anonymous: anon, anonymousSet: true})
@@ -515,7 +536,7 @@ func TestWallValidation(t *testing.T) {
 	}
 
 	// A drawing over the image cap, still under the multipart cap, is rejected before insert.
-	res = postForm(t, client, url, fields{file: bytes.Repeat([]byte("a"), upload.MaxBytes+1), fileSet: true, filename: "big.png"})
+	res := postForm(t, client, url, fields{file: bytes.Repeat([]byte("a"), upload.MaxBytes+1), fileSet: true, filename: "big.png"})
 	assertAPIError(t, res, http.StatusBadRequest, "too_large")
 	before := countWall(t, database, owner.ID)
 	res = postForm(t, client, url, fields{file: bytes.Repeat([]byte("b"), int(upload.MaxBytes+multipartSlack+8)), fileSet: true, filename: "bigger.png"})
@@ -523,6 +544,41 @@ func TestWallValidation(t *testing.T) {
 	if countWall(t, database, owner.ID) != before {
 		t.Fatal("oversized post was stored")
 	}
+}
+
+func TestWallRateAndBodyLimit(t *testing.T) {
+	srv, _ := newWallServer(t)
+	database := testutil.Database(t, srv)
+	owner := testutil.CreateUser(t, database, testutil.WithName("Owner"))
+	author := testutil.CreateUser(t, database, testutil.WithName("Ada"))
+	other := testutil.CreateUser(t, database, testutil.WithName("Bea"))
+	client := testutil.LoginAs(t, srv, author)
+	otherClient := testutil.LoginAs(t, srv, other)
+	url := wallURL(srv, owner.ID)
+
+	big := bytes.Repeat([]byte("a"), int(upload.MaxBytes+multipartSlack)+1)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(big))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAPIError(t, res, http.StatusBadRequest, "too_large", "Request body is too large.")
+	if countWall(t, database, owner.ID) != 0 {
+		t.Fatal("oversized post was stored")
+	}
+
+	for i := range 20 {
+		mustPost(t, client, url, fields{body: "n" + strconv.Itoa(i), bodySet: true})
+	}
+	res = postForm(t, client, url, fields{body: "over", bodySet: true})
+	assertAPIError(t, res, http.StatusTooManyRequests, "rate_limited", "Too many requests. Try again in a minute.")
+	if res.Header.Get("Retry-After") == "" {
+		t.Fatal("missing Retry-After")
+	}
+	mustPost(t, otherClient, url, fields{body: "from bea", bodySet: true})
 }
 
 func TestWallParentLoop(t *testing.T) {

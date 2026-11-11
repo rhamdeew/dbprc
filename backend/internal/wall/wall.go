@@ -94,9 +94,12 @@ func Routes(mux *http.ServeMux, log *slog.Logger, sessions *session.Manager, dat
 	}
 	h := &handlers{log: log, db: database, uploads: uploads}
 	guard := httpx.RequireUser(log, sessions.UserID, sqlc.New(database.Reader()).GetUser, sessions.Destroy)
+	// Every POST counts, including ones the handler rejects. 20 per user per minute.
+	postLimit := httpx.NewLimiter(20, time.Minute)
+	const uploadBody = int64(upload.MaxBytes + multipartSlack)
 	mux.Handle("GET /api/users/{id}/wall", guard(http.HandlerFunc(h.get)))
-	mux.Handle("POST /api/users/{id}/wall", guard(http.HandlerFunc(h.post)))
-	mux.Handle("DELETE /api/wall/{postId}", guard(http.HandlerFunc(h.delete)))
+	mux.Handle("POST /api/users/{id}/wall", guard(httpx.LimitBody(uploadBody)(httpx.RateLimit(postLimit)(http.HandlerFunc(h.post)))))
+	mux.Handle("DELETE /api/wall/{postId}", guard(httpx.LimitBody(httpx.SmallBodyLimit)(http.HandlerFunc(h.delete))))
 }
 
 func (h *handlers) get(w http.ResponseWriter, r *http.Request) {

@@ -89,22 +89,27 @@ func TestRandomPrefersFreshPartner(t *testing.T) {
 	wantName := map[int64]string{fresh1.ID: "Fresh One", fresh2.ID: "Fresh Two"}
 	wantAvatar := map[int64]string{fresh1.ID: "/uploads/avatar/f1.jpg", fresh2.ID: "/uploads/avatar/f2.jpg"}
 	seen := map[int64]bool{}
-	for i := 0; i < 20; i++ {
+	// Two calls: after the first fresh partner is taken out of the pool, the
+	// second call has to be the other one. Staying at two keeps the 10/min cap.
+	for round := 0; round < 2; round++ {
 		code, raw := do(t, client, http.MethodPost, srv.URL+"/api/chats/random", nil)
 		if code != http.StatusCreated {
-			t.Fatalf("round %d: %d %s", i, code, raw)
+			t.Fatalf("round %d: %d %s", round, code, raw)
 		}
 		var body randomView
 		mustDecode(t, raw, &body)
 		partner := body.Chat.Partner.ID
 		if body.Rematch || partner == me.ID || partner == old.ID || partner == off.ID || wantName[partner] == "" {
-			t.Fatalf("round %d picked %+v", i, body)
+			t.Fatalf("round %d picked %+v", round, body)
+		}
+		if seen[partner] {
+			t.Fatalf("round %d repeated %d", round, partner)
 		}
 		if body.Chat.UnreadCount != 0 || body.Chat.LastMessage != nil || body.Chat.Partner.Name != wantName[partner] {
-			t.Fatalf("round %d view %+v", i, body.Chat)
+			t.Fatalf("round %d view %+v", round, body.Chat)
 		}
 		if body.Chat.Partner.AvatarURL == nil || *body.Chat.Partner.AvatarURL != wantAvatar[partner] {
-			t.Fatalf("round %d avatar %+v", i, body.Chat.Partner)
+			t.Fatalf("round %d avatar %+v", round, body.Chat.Partner)
 		}
 		low, high := chatPair(t, database, body.Chat.ID)
 		if low >= high || (low != me.ID && high != me.ID) || (low != partner && high != partner) {
@@ -112,6 +117,9 @@ func TestRandomPrefersFreshPartner(t *testing.T) {
 		}
 		seen[partner] = true
 		deleteChat(t, database, body.Chat.ID)
+		if _, err := database.Writer().ExecContext(t.Context(), `UPDATE users SET available = 0 WHERE id = ?`, partner); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if !seen[fresh1.ID] || !seen[fresh2.ID] {
 		t.Fatalf("partners seen %v", seen)
@@ -888,6 +896,76 @@ func messagesNull(t *testing.T, client *http.Client, srv *httptest.Server, chatI
 	mustDecode(t, raw, &keys)
 	msgs, ok := keys["messages"].([]any)
 	return !ok || msgs == nil
+}
+
+func TestRandomAndMessageLimits(t *testing.T) {
+	srv := newServer(t, nil)
+	database := testutil.Database(t, srv)
+	me := testutil.CreateUser(t, database, testutil.WithName("Me"))
+	other := testutil.CreateUser(t, database, testutil.WithName("Other"))
+	client := testutil.LoginAs(t, srv, me)
+	otherClient := testutil.LoginAs(t, srv, other)
+
+	over := bytes.Repeat([]byte("a"), int(httpx.SmallBodyLimit)+1)
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/chats/random", bytes.NewReader(over))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	requireCode(t, res.StatusCode, raw, http.StatusBadRequest, "too_large", "Request body is too large.")
+	if n := countWhere(t, database, `SELECT count(*) FROM chats`); n != 0 {
+		t.Fatalf("chats %d", n)
+	}
+
+	for i := 1; i <= 10; i++ {
+		code, body := do(t, client, http.MethodPost, srv.URL+"/api/chats/random", nil)
+		if code != http.StatusCreated {
+			t.Fatalf("random %d: %d %s", i, code, body)
+		}
+	}
+	code, body := do(t, client, http.MethodPost, srv.URL+"/api/chats/random", nil)
+	requireCode(t, code, body, http.StatusTooManyRequests, "rate_limited", "Too many requests. Try again in a minute.")
+	code, body = do(t, otherClient, http.MethodPost, srv.URL+"/api/chats/random", nil)
+	if code != http.StatusCreated {
+		t.Fatalf("other random %d %s", code, body)
+	}
+
+	listed := getChats(t, client, srv)
+	if len(listed) != 1 {
+		t.Fatalf("chats %+v", listed)
+	}
+	msgURL := chatMessagesURL(srv, listed[0].ID)
+	big := bytes.Repeat([]byte("b"), int(httpx.JSONBodyLimit)+1)
+	req, err = http.NewRequest(http.MethodPost, msgURL, bytes.NewReader(big))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err = otherClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	requireCode(t, res.StatusCode, raw, http.StatusBadRequest, "too_large", "Request body is too large.")
+
+	for i := 1; i <= 60; i++ {
+		code, body = do(t, otherClient, http.MethodPost, msgURL, map[string]any{"body": "m"})
+		if code != http.StatusCreated {
+			t.Fatalf("message %d: %d %s", i, code, body)
+		}
+	}
+	code, body = do(t, otherClient, http.MethodPost, msgURL, map[string]any{"body": "over"})
+	requireCode(t, code, body, http.StatusTooManyRequests, "rate_limited", "")
+	code, body = do(t, client, http.MethodPost, msgURL, map[string]any{"body": "still ok"})
+	if code != http.StatusCreated {
+		t.Fatalf("other sender %d %s", code, body)
+	}
 }
 
 func readUpTo(t *testing.T, client *http.Client, srv *httptest.Server, chatID, messageID int64) int64 {

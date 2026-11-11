@@ -23,10 +23,9 @@ import (
 
 const (
 	// maxBodyRunes is the limit after trimming. "4000 chars" counts characters, not bytes.
-	maxBodyRunes  = 4000
-	defaultLimit  = 50
-	maxLimit      = 100
-	jsonBodyLimit = 32 << 10
+	maxBodyRunes = 4000
+	defaultLimit = 50
+	maxLimit     = 100
 
 	kindText   = "text"
 	kindSystem = "system"
@@ -130,12 +129,15 @@ func Routes(mux *http.ServeMux, log *slog.Logger, sessions *session.Manager, dat
 	}
 	h := &handlers{log: log, db: database, notifier: notifier}
 	guard := httpx.RequireUser(log, sessions.UserID, sqlc.New(database.Reader()).GetUser, sessions.Destroy)
-	mux.Handle("PUT /api/me/availability", guard(http.HandlerFunc(h.putAvailability)))
-	mux.Handle("POST /api/chats/random", guard(http.HandlerFunc(h.random)))
+	// Per signed-in user, per minute. Invalid bodies count; an oversized body does not.
+	randomLimit := httpx.NewLimiter(10, time.Minute)
+	messageLimit := httpx.NewLimiter(60, time.Minute)
+	mux.Handle("PUT /api/me/availability", guard(httpx.LimitBody(httpx.JSONBodyLimit)(http.HandlerFunc(h.putAvailability))))
+	mux.Handle("POST /api/chats/random", guard(httpx.LimitBody(httpx.SmallBodyLimit)(httpx.RateLimit(randomLimit)(http.HandlerFunc(h.random)))))
 	mux.Handle("GET /api/chats", guard(http.HandlerFunc(h.list)))
 	mux.Handle("GET /api/chats/{id}/messages", guard(http.HandlerFunc(h.listMessages)))
-	mux.Handle("POST /api/chats/{id}/messages", guard(http.HandlerFunc(h.postMessage)))
-	mux.Handle("POST /api/chats/{id}/read", guard(http.HandlerFunc(h.markRead)))
+	mux.Handle("POST /api/chats/{id}/messages", guard(httpx.LimitBody(httpx.JSONBodyLimit)(httpx.RateLimit(messageLimit)(http.HandlerFunc(h.postMessage)))))
+	mux.Handle("POST /api/chats/{id}/read", guard(httpx.LimitBody(httpx.JSONBodyLimit)(http.HandlerFunc(h.markRead))))
 }
 
 func (h *handlers) putAvailability(w http.ResponseWriter, r *http.Request) {
@@ -520,8 +522,13 @@ func avatarURL(path *string) *string {
 }
 
 func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, jsonBodyLimit))
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, httpx.JSONBodyLimit))
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			httpx.WriteError(w, http.StatusBadRequest, "too_large", "Request body is too large.")
+			return nil, false
+		}
 		httpx.WriteError(w, http.StatusBadRequest, "invalid", "Check the request and try again.")
 		return nil, false
 	}

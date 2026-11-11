@@ -746,6 +746,76 @@ func loadUser(t *testing.T, database *db.DB, id int64) storedUser {
 	return row
 }
 
+func TestUploadRateAndBodyLimits(t *testing.T) {
+	srv, _ := newProfileServer(t)
+	database := testutil.Database(t, srv)
+	me := testutil.CreateUser(t, database, testutil.WithName("Ada"), testutil.WithEmail("ada@example.com"))
+	other := testutil.CreateUser(t, database, testutil.WithName("Bea"), testutil.WithEmail("bea@example.com"))
+	client := testutil.LoginAs(t, srv, me)
+	otherClient := testutil.LoginAs(t, srv, other)
+
+	big := bytes.Repeat([]byte("a"), int(upload.MaxBytes+(1<<20))+1)
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/me/avatar", bytes.NewReader(big))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAPIError(t, res, http.StatusBadRequest, "too_large", "Request body is too large.")
+
+	interests := bytes.Repeat([]byte("b"), int(httpx.JSONBodyLimit)+1)
+	req, err = http.NewRequest(http.MethodPut, srv.URL+"/api/me/interests", bytes.NewReader(interests))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAPIError(t, res, http.StatusBadRequest, "too_large", "Request body is too large.")
+
+	plain := func(c *http.Client, path string) *http.Response {
+		t.Helper()
+		r, err := http.NewRequest(http.MethodPost, srv.URL+path, strings.NewReader("x"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Header.Set("Content-Type", "text/plain")
+		got, err := c.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	for range 10 {
+		assertAPIError(t, plain(client, "/api/me/avatar"), http.StatusBadRequest, "invalid")
+		assertAPIError(t, plain(client, "/api/me/photos"), http.StatusBadRequest, "invalid")
+	}
+	res = plain(client, "/api/me/avatar")
+	assertAPIError(t, res, http.StatusTooManyRequests, "rate_limited", "Too many requests. Try again in a minute.")
+	if res.Header.Get("Retry-After") == "" {
+		t.Fatal("missing Retry-After")
+	}
+	res = plain(otherClient, "/api/me/photos")
+	if res.StatusCode == http.StatusTooManyRequests {
+		t.Fatal("other user was limited")
+	}
+	assertAPIError(t, res, http.StatusBadRequest, "invalid")
+
+	req, err = http.NewRequest(http.MethodDelete, srv.URL+"/api/me/photos/1", bytes.NewReader(bytes.Repeat([]byte("c"), int(httpx.SmallBodyLimit)+1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err = otherClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAPIError(t, res, http.StatusBadRequest, "too_large", "Request body is too large.")
+}
+
 func photoCount(t *testing.T, database *db.DB, userID int64) int {
 	t.Helper()
 	var n int

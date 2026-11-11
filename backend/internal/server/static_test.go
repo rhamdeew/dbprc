@@ -100,6 +100,25 @@ func TestDevStatic(t *testing.T) {
 			if tt.wantCache != "" && resp.Header.Get("Cache-Control") != tt.wantCache {
 				t.Fatalf("cache %q", resp.Header.Get("Cache-Control"))
 			}
+			served := (tt.method == http.MethodGet || tt.method == http.MethodHead) && tt.wantStatus == http.StatusOK &&
+				tt.path != "/healthz" && !strings.HasPrefix(tt.path, "/api/")
+			if served {
+				csp := resp.Header.Get("Content-Security-Policy")
+				for _, part := range []string{"default-src 'self'", "img-src 'self' data: blob:", "frame-ancestors 'none'", "wss://" + req.Host} {
+					if !strings.Contains(csp, part) {
+						t.Fatalf("csp %q missing %s", csp, part)
+					}
+				}
+				if resp.Header.Get("X-Content-Type-Options") != "nosniff" || resp.Header.Get("Referrer-Policy") != "same-origin" {
+					t.Fatalf("headers %v", resp.Header)
+				}
+			}
+			if tt.path == "/uploads/photos/a.jpg" && resp.Header.Get("Content-Disposition") != "inline" {
+				t.Fatalf("disposition %q", resp.Header.Get("Content-Disposition"))
+			}
+			if tt.path == "/healthz" && resp.Header.Get("Content-Security-Policy") != "" {
+				t.Fatalf("healthz csp %q", resp.Header.Get("Content-Security-Policy"))
+			}
 		})
 	}
 

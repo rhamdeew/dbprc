@@ -28,7 +28,6 @@ const (
 	// maxInterestRunes is the limit after trimming. "500 chars" counts characters, not bytes.
 	maxInterestRunes = 500
 	maxPhotos        = 5
-	jsonBodyLimit    = 32 << 10
 	// multipartSlack leaves room for boundaries around an image of upload.MaxBytes.
 	multipartSlack = 1 << 20
 )
@@ -76,12 +75,15 @@ func Routes(mux *http.ServeMux, log *slog.Logger, sessions *session.Manager, dat
 	}
 	h := &handlers{log: log, db: database, uploads: uploads}
 	guard := httpx.RequireUser(log, sessions.UserID, sqlc.New(database.Reader()).GetUser, sessions.Destroy)
+	// Avatar and photo uploads share one bucket: 20 per user per minute.
+	uploadLimit := httpx.NewLimiter(20, time.Minute)
+	const uploadBody = int64(upload.MaxBytes + multipartSlack)
 	mux.Handle("GET /api/users/search", guard(http.HandlerFunc(h.search)))
 	mux.Handle("GET /api/users/{id}", guard(http.HandlerFunc(h.get)))
-	mux.Handle("PUT /api/me/interests", guard(http.HandlerFunc(h.putInterests)))
-	mux.Handle("POST /api/me/avatar", guard(http.HandlerFunc(h.postAvatar)))
-	mux.Handle("POST /api/me/photos", guard(http.HandlerFunc(h.postPhoto)))
-	mux.Handle("DELETE /api/me/photos/{id}", guard(http.HandlerFunc(h.deletePhoto)))
+	mux.Handle("PUT /api/me/interests", guard(httpx.LimitBody(httpx.JSONBodyLimit)(http.HandlerFunc(h.putInterests))))
+	mux.Handle("POST /api/me/avatar", guard(httpx.LimitBody(uploadBody)(httpx.RateLimit(uploadLimit)(http.HandlerFunc(h.postAvatar)))))
+	mux.Handle("POST /api/me/photos", guard(httpx.LimitBody(uploadBody)(httpx.RateLimit(uploadLimit)(http.HandlerFunc(h.postPhoto)))))
+	mux.Handle("DELETE /api/me/photos/{id}", guard(httpx.LimitBody(httpx.SmallBodyLimit)(http.HandlerFunc(h.deletePhoto))))
 }
 
 func (h *handlers) get(w http.ResponseWriter, r *http.Request) {
@@ -420,8 +422,13 @@ func writeImageError(log *slog.Logger, w http.ResponseWriter, err error) {
 
 func decodeInterests(w http.ResponseWriter, r *http.Request) (interestsJSON, bool) {
 	var body interestsJSON
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, jsonBodyLimit))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, httpx.JSONBodyLimit))
 	if err := dec.Decode(&body); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			httpx.WriteError(w, http.StatusBadRequest, "too_large", "Request body is too large.")
+			return interestsJSON{}, false
+		}
 		httpx.WriteError(w, http.StatusBadRequest, "invalid", "Check the interests and try again.")
 		return interestsJSON{}, false
 	}
