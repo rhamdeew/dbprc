@@ -29,6 +29,11 @@ type server struct {
 
 	wg       sync.WaitGroup
 	serveErr chan error
+
+	// conns tracks live sockets so shutdown can close a StateNew dial
+	// that never sent a request. http.Server will not.
+	connMu sync.Mutex
+	conns  map[net.Conn]http.ConnState
 }
 
 func newServer(ctx context.Context, listen, host string, log *slog.Logger) (*server, error) {
@@ -56,6 +61,7 @@ func newServer(ctx context.Context, listen, host string, log *slog.Logger) (*ser
 		publicHost: host,
 		log:        log,
 		serveErr:   make(chan error, 1),
+		conns:      map[net.Conn]http.ConnState{},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc(mockoidc.AuthorizationEndpoint, srv.handleAuthorize)
@@ -69,6 +75,7 @@ func newServer(ctx context.Context, listen, host string, log *slog.Logger) (*ser
 		Addr:              host,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
+		ConnState:         srv.trackConn,
 	}
 	// Issuer() and the discovery document read Server.Addr. It is the public
 	// host, which may differ from the address we bound.
@@ -91,9 +98,37 @@ func (s *server) origin() string { return "http://" + s.publicHost }
 func (s *server) issuer() string { return s.origin() + mockoidc.IssuerBase }
 
 func (s *server) shutdown(ctx context.Context) error {
+	// Keep-alives and a Go Transport spare dial (accepted, no bytes yet)
+	// sit in StateNew. Shutdown leaves those alone until they are 5s old,
+	// which loses the race with this deadline. Close them first.
+	s.http.SetKeepAlivesEnabled(false)
+	s.closeNewConns()
 	err := s.http.Shutdown(ctx)
+	if err != nil {
+		err = s.http.Close()
+	}
 	s.wg.Wait()
 	return err
+}
+
+func (s *server) trackConn(c net.Conn, st http.ConnState) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if st == http.StateClosed || st == http.StateHijacked {
+		delete(s.conns, c)
+		return
+	}
+	s.conns[c] = st
+}
+
+func (s *server) closeNewConns() {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	for c, st := range s.conns {
+		if st == http.StateNew {
+			_ = c.Close()
+		}
+	}
 }
 
 // handleAuthorize pushes exactly one identity and then runs mockoidc.
