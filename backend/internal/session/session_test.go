@@ -12,6 +12,36 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/testutil"
 )
 
+func TestSessionUserID(t *testing.T) {
+	if _, ok := session.SessionUserID(nil); ok {
+		t.Fatal("nil blob")
+	}
+	if _, ok := session.SessionUserID([]byte{0, 1, 2}); ok {
+		t.Fatal("garbage blob")
+	}
+
+	database := testutil.NewDB(t)
+	mgr := session.New(database.Writer(), session.Settings{Secure: false}, nil)
+	t.Cleanup(mgr.Close)
+	user := testutil.CreateUser(t, database)
+	other := testutil.CreateUser(t, database)
+	cookie, err := mgr.Mint(t.Context(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data []byte
+	if err := database.Writer().QueryRowContext(t.Context(), `SELECT data FROM sessions WHERE token = ?`, cookie.Value).Scan(&data); err != nil {
+		t.Fatal(err)
+	}
+	id, ok := session.SessionUserID(data)
+	if !ok || id != user.ID {
+		t.Fatalf("id %d ok %v, want %d", id, ok, user.ID)
+	}
+	if id == other.ID {
+		t.Fatal("session matched the other user")
+	}
+}
+
 func TestManagerCookieAndIdleExpiry(t *testing.T) {
 	database := testutil.NewDB(t)
 	tests := []struct {

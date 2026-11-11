@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/rhamdeew/dbprc/backend/internal/admin"
 	"github.com/rhamdeew/dbprc/backend/internal/auth"
 	"github.com/rhamdeew/dbprc/backend/internal/chat"
 	"github.com/rhamdeew/dbprc/backend/internal/config"
@@ -40,7 +41,8 @@ type Server struct {
 // New builds the root handler. deps.DB is required.
 // GET /healthz, GET /api/version, and GET /auth/google/* are public.
 // GET /api/me, the profile routes (including colleague search), the wall routes,
-// the chat routes, and GET /ws require a session.
+// the chat routes, the admin routes, and GET /ws require a session.
+// Admin routes also require an email in ADMIN_EMAILS; anyone else gets 404.
 // When cfg.StaticDir is set, other GET and HEAD requests serve that directory.
 func New(cfg config.Config, deps Deps) *Server {
 	if deps.DB == nil {
@@ -70,6 +72,7 @@ func New(cfg config.Config, deps Deps) *Server {
 	auth.Routes(mux, cfg, log, sessions, deps.DB, uploads)
 	profile.Routes(mux, log, sessions, deps.DB, uploads)
 	wall.Routes(mux, log, sessions, deps.DB, uploads)
+	admin.Routes(mux, cfg, log, sessions, deps.DB, uploads)
 
 	notifier := deps.ChatNotifier
 	var hub *realtime.Hub
