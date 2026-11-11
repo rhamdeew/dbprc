@@ -34,7 +34,7 @@ export const reconnectClock = {
   },
 };
 
-type RealtimeEvent =
+export type RealtimeEvent =
   | { type: 'chat.new'; data: ChatSummary }
   | { type: 'message.new'; data: { chatId: number; message: ChatMessage } };
 
@@ -76,10 +76,14 @@ export function applyRealtime(queryClient: QueryClient, raw: unknown, openChatId
  * One socket for the signed-in session. The first open does not refetch.
  * A later open invalidates the chat list and the thread that is on screen.
  * Failed connects wait 1s, then double until 30s, and reset after a successful open.
+ * `onEvent` runs after the cache update for each accepted `chat.new` / `message.new`.
  */
-export function useRealtime(openChatId: number | null) {
+export function useRealtime(openChatId: number | null, onEvent?: (event: RealtimeEvent) => void) {
   const queryClient = useQueryClient();
   const openChatNow = useEffectEvent(() => openChatId);
+  const onEventNow = useEffectEvent((event: RealtimeEvent) => {
+    onEvent?.(event);
+  });
 
   useEffect(() => {
     let stopped = false;
@@ -130,7 +134,9 @@ export function useRealtime(openChatId: number | null) {
       socket.addEventListener('message', (event) => {
         if (stopped || current !== socket) return;
         if (typeof event.data !== 'string') return;
+        const parsed = parseRealtimeEvent(event.data);
         applyRealtime(queryClient, event.data, openChatNow());
+        if (parsed) onEventNow(parsed);
       });
 
       socket.addEventListener('close', () => {
