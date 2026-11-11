@@ -82,7 +82,12 @@ describe('app shell', () => {
   });
 
   it('shows Admin only when me.isAdmin is true', async () => {
-    server.use(http.get('/api/me', () => HttpResponse.json(admin)));
+    server.use(
+      http.get('/api/me', () => HttpResponse.json(admin)),
+      http.get('/api/admin/stats', () =>
+        HttpResponse.json({ users: 1, availableUsers: 1, chats: 0, messages: 0, wallPosts: 0, photos: 0 }),
+      ),
+    );
     renderAt('/admin');
 
     expect(await screen.findByRole('link', { name: 'Admin' })).toBeInTheDocument();
