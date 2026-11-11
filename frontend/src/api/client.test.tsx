@@ -113,6 +113,15 @@ describe('api client', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
   });
 
+  it('skips the toast when silent is set', async () => {
+    server.use(
+      http.get('/api/item', () => HttpResponse.json({ code: 'not_found', message: 'Gone' }, { status: 404 })),
+    );
+    const error = await capture(() => api('/api/item', { silent: true }));
+    expect(error).toMatchObject({ status: 404, code: 'not_found', message: 'Gone' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('redirects to login on 401 and does not notify', async () => {
     setTestPath('/messenger', '?x=1');
     server.use(http.get('/api/me', () => new HttpResponse(null, { status: 401 })));
