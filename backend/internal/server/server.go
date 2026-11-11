@@ -12,6 +12,7 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/db"
 	"github.com/rhamdeew/dbprc/backend/internal/httpx"
 	"github.com/rhamdeew/dbprc/backend/internal/profile"
+	"github.com/rhamdeew/dbprc/backend/internal/realtime"
 	"github.com/rhamdeew/dbprc/backend/internal/session"
 	"github.com/rhamdeew/dbprc/backend/internal/upload"
 	"github.com/rhamdeew/dbprc/backend/internal/wall"
@@ -21,7 +22,9 @@ import (
 type Deps struct {
 	DB  *db.DB
 	Log *slog.Logger
-	// ChatNotifier receives chat events after they commit. Nil becomes chat.NopNotifier.
+	// ChatNotifier receives chat events after they commit.
+	// Nil uses the in-memory realtime hub, which also serves GET /ws.
+	// A non-nil value replaces the hub (tests pass a recorder).
 	ChatNotifier chat.Notifier
 }
 
@@ -31,11 +34,13 @@ type Server struct {
 	handler  http.Handler
 	sessions *session.Manager
 	db       *db.DB
+	hub      *realtime.Hub
 }
 
 // New builds the root handler. deps.DB is required.
 // GET /healthz, GET /api/version, and GET /auth/google/* are public.
-// GET /api/me, the profile routes (including colleague search), the wall routes, and the chat routes require a session.
+// GET /api/me, the profile routes (including colleague search), the wall routes,
+// the chat routes, and GET /ws require a session.
 func New(cfg config.Config, deps Deps) *Server {
 	if deps.DB == nil {
 		panic("server: nil database")
@@ -64,14 +69,22 @@ func New(cfg config.Config, deps Deps) *Server {
 	auth.Routes(mux, cfg, log, sessions, deps.DB, uploads)
 	profile.Routes(mux, log, sessions, deps.DB, uploads)
 	wall.Routes(mux, log, sessions, deps.DB, uploads)
-	chat.Routes(mux, log, sessions, deps.DB, deps.ChatNotifier)
+
+	notifier := deps.ChatNotifier
+	var hub *realtime.Hub
+	if notifier == nil {
+		hub = realtime.New(deps.DB, log, cfg.AppBaseURL)
+		notifier = hub
+	}
+	chat.Routes(mux, log, sessions, deps.DB, notifier)
+	realtime.Routes(mux, log, sessions, hub)
 
 	var handler http.Handler = mux
 	handler = sessions.LoadAndSave(handler)
 	handler = httpx.CSRF(cfg.AppBaseURL)(handler)
 	handler = logRequests(log, handler)
 
-	return &Server{handler: handler, sessions: sessions, db: deps.DB}
+	return &Server{handler: handler, sessions: sessions, db: deps.DB, hub: hub}
 }
 
 // ServeHTTP implements http.Handler.
@@ -79,12 +92,25 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
 }
 
-// Close stops the session store's cleanup goroutine.
+// Close stops WebSocket handlers, then the session store's cleanup goroutine.
+// Call it before http.Server.Shutdown: Shutdown does not close hijacked sockets.
 func (s *Server) Close() {
 	if s == nil {
 		return
 	}
+	if s.hub != nil {
+		s.hub.Close()
+	}
 	s.sessions.Close()
+}
+
+// WSConnCount is the number of open WebSocket connections for userID.
+// The HTTP 101 is written before the socket is registered, so tests wait on this.
+func (s *Server) WSConnCount(userID int64) int {
+	if s == nil || s.hub == nil {
+		return 0
+	}
+	return s.hub.ConnCount(userID)
 }
 
 // DB is the database this server uses.
@@ -104,6 +130,10 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
 }
+
+// Unwrap lets websocket.Accept find the http.Hijacker under the logger
+// and the session middleware. Without it, GET /ws cannot upgrade.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -56,7 +56,7 @@ type Message struct {
 
 // Notifier receives chat events after the write commits.
 // userIDs is both members, user_low then user_high.
-// ARC-26 replaces NopNotifier with the in-process hub.
+// The process hub in internal/realtime is the production notifier.
 type Notifier interface {
 	ChatCreated(chat Chat, userIDs []int64)
 	MessageCreated(msg Message, userIDs []int64)
