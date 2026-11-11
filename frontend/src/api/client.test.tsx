@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '../test/render';
 import { locationAssign, setTestPath } from '../test/location';
 import { server } from '../test/server';
-import { api, ApiError } from './client';
+import { api, ApiError, uploadFile, uploadPercent } from './client';
 
 async function capture(run: () => Promise<unknown>) {
   let caught: unknown;
@@ -146,5 +146,69 @@ describe('api client', () => {
     expect(new Headers(init.headers).get('Content-Type')).toBe('application/json');
     expect(init.body).toBe('{"a":1}');
     fetchSpy.mockRestore();
+  });
+});
+
+describe('uploadFile', () => {
+  beforeEach(() => {
+    render(<div />);
+  });
+
+  it('posts the file field and returns the JSON body', async () => {
+    const appended: unknown[][] = [];
+    const append = FormData.prototype.append;
+    const spy = vi.spyOn(FormData.prototype, 'append').mockImplementation(function (this: FormData, ...args) {
+      appended.push(args);
+      return append.apply(this, args);
+    });
+    server.use(http.post('/api/me/avatar', () => HttpResponse.json({ avatarUrl: '/uploads/avatars/a.png' })));
+
+    const file = new File(['png'], 'a.png', { type: 'image/png' });
+    await expect(uploadFile('/api/me/avatar', file, () => {})).resolves.toEqual({ avatarUrl: '/uploads/avatars/a.png' });
+    expect(appended).toEqual([['file', file]]);
+    spy.mockRestore();
+  });
+
+  it('shows an upload error', async () => {
+    server.use(
+      http.post('/api/me/avatar', () =>
+        HttpResponse.json(
+          { code: 'unsupported_type', message: 'Use a JPEG, PNG, GIF, or WebP image.' },
+          { status: 400 },
+        ),
+      ),
+    );
+    const error = await capture(() => uploadFile('/api/me/avatar', new File(['x'], 'a.gif', { type: 'image/gif' })));
+    expect(error).toMatchObject({ status: 400, code: 'unsupported_type' });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Use a JPEG, PNG, GIF, or WebP image.');
+  });
+
+  it('redirects to login when the upload is unauthorized', async () => {
+    setTestPath('/u/7');
+    server.use(http.post('/api/me/avatar', () => new HttpResponse(null, { status: 401 })));
+    await expect(uploadFile('/api/me/avatar', new File(['x'], 'a.png', { type: 'image/png' }))).rejects.toMatchObject({
+      status: 401,
+      code: 'unauthenticated',
+    });
+    expect(locationAssign).toHaveBeenCalledWith('/login?next=%2Fu%2F7');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('rejects an invalid success payload', async () => {
+    server.use(http.post('/api/me/avatar', () => new HttpResponse('not-json', { status: 200 })));
+    await expect(capture(() => uploadFile('/api/me/avatar', new File(['x'], 'a.png')))).resolves.toMatchObject({
+      code: 'invalid_response',
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+  });
+});
+
+describe('uploadPercent', () => {
+  it('clamps a known size and ignores an unknown total', () => {
+    expect(uploadPercent(1, 4)).toBe(25);
+    expect(uploadPercent(4, 4)).toBe(100);
+    expect(uploadPercent(8, 4)).toBe(100);
+    expect(uploadPercent(0, 0)).toBeNull();
+    expect(uploadPercent(1, Number.NaN)).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import type { Me } from '../api/me';
+import type { Profile } from '../api/profile';
 
 export const member: Me = {
   id: 7,
@@ -16,3 +17,17 @@ export const admin: Me = {
   name: 'Grace Hopper',
   isAdmin: true,
 };
+
+export function profileFor(person: Me, overrides: Partial<Profile> = {}): Profile {
+  const { interests, ...rest } = overrides;
+  return {
+    id: person.id,
+    name: person.name,
+    email: person.email,
+    avatarUrl: person.avatarUrl,
+    photos: [],
+    isMe: true,
+    ...rest,
+    interests: { hobby: '', music: '', movies: '', other: '', ...interests },
+  };
+}
