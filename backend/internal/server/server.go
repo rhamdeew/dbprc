@@ -12,6 +12,7 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/config"
 	"github.com/rhamdeew/dbprc/backend/internal/db"
 	"github.com/rhamdeew/dbprc/backend/internal/httpx"
+	"github.com/rhamdeew/dbprc/backend/internal/msgcrypt"
 	"github.com/rhamdeew/dbprc/backend/internal/profile"
 	"github.com/rhamdeew/dbprc/backend/internal/realtime"
 	"github.com/rhamdeew/dbprc/backend/internal/session"
@@ -48,6 +49,10 @@ func New(cfg config.Config, deps Deps) *Server {
 	if deps.DB == nil {
 		panic("server: nil database")
 	}
+	crypt, err := msgcrypt.New(cfg.MessageKey, cfg.MessageKeyOld)
+	if err != nil {
+		panic("server: invalid message key")
+	}
 	log := deps.Log
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
@@ -77,10 +82,10 @@ func New(cfg config.Config, deps Deps) *Server {
 	notifier := deps.ChatNotifier
 	var hub *realtime.Hub
 	if notifier == nil {
-		hub = realtime.New(deps.DB, log, cfg.AppBaseURL)
+		hub = realtime.New(deps.DB, log, cfg.AppBaseURL, crypt)
 		notifier = hub
 	}
-	chat.Routes(mux, log, sessions, deps.DB, notifier)
+	chat.Routes(mux, log, sessions, deps.DB, notifier, crypt)
 	realtime.Routes(mux, log, sessions, hub)
 
 	var handler http.Handler = mux

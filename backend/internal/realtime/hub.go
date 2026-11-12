@@ -22,6 +22,7 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/db"
 	"github.com/rhamdeew/dbprc/backend/internal/db/sqlc"
 	"github.com/rhamdeew/dbprc/backend/internal/httpx"
+	"github.com/rhamdeew/dbprc/backend/internal/msgcrypt"
 	"github.com/rhamdeew/dbprc/backend/internal/session"
 	"github.com/rhamdeew/dbprc/backend/internal/upload"
 )
@@ -40,6 +41,7 @@ const (
 
 // Hub maps a user id to the set of sockets open for that user.
 type Hub struct {
+	crypt          *msgcrypt.Cipher
 	db             *db.DB
 	log            *slog.Logger
 	originPatterns []string
@@ -101,7 +103,7 @@ var errChatNotVisible = errors.New("chat not visible")
 // New builds a hub. appBaseURL's host (including port) is the only extra
 // origin allowed to upgrade; the request host is always allowed.
 // A nil database panics. A nil logger discards logs.
-func New(database *db.DB, log *slog.Logger, appBaseURL string) *Hub {
+func New(database *db.DB, log *slog.Logger, appBaseURL string, crypt *msgcrypt.Cipher) *Hub {
 	if database == nil {
 		panic("realtime: nil database")
 	}
@@ -109,6 +111,7 @@ func New(database *db.DB, log *slog.Logger, appBaseURL string) *Hub {
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &Hub{
+		crypt:          crypt,
 		db:             database,
 		log:            log,
 		originPatterns: originPatterns(appBaseURL),
@@ -364,16 +367,16 @@ func (h *Hub) chatView(userID, chatID int64) (chatJSON, error) {
 	}
 	for _, row := range rows {
 		if row.ID == chatID {
-			return toChatJSON(row), nil
+			return h.toChatJSON(row), nil
 		}
 	}
 	return chatJSON{}, errChatNotVisible
 }
 
-func toChatJSON(row sqlc.ListChatsForUserRow) chatJSON {
+func (h *Hub) toChatJSON(row sqlc.ListChatsForUserRow) chatJSON {
 	var last *lastMessageJSON
 	if row.LastBody != nil && row.LastKind != nil && row.LastCreatedAt != nil {
-		last = &lastMessageJSON{Body: *row.LastBody, Kind: *row.LastKind, CreatedAt: *row.LastCreatedAt}
+		last = &lastMessageJSON{Body: h.crypt.Body(h.log, *row.LastMessageID, row.ID, *row.LastBody), Kind: *row.LastKind, CreatedAt: *row.LastCreatedAt}
 	}
 	return chatJSON{
 		ID:          row.ID,

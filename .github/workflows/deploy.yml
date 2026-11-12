@@ -82,6 +82,8 @@ jobs:
           BASIC_AUTH_HASH: ${{ secrets.BASIC_AUTH_HASH }}
           OIDC_CLIENT_ID: ${{ secrets.OIDC_CLIENT_ID }}
           OIDC_CLIENT_SECRET: ${{ secrets.OIDC_CLIENT_SECRET }}
+          MESSAGE_KEY: ${{ secrets.MESSAGE_KEY }}
+          MESSAGE_KEY_OLD: ${{ secrets.MESSAGE_KEY_OLD }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
           ALLOWED_DOMAIN: ${{ secrets.ALLOWED_DOMAIN }}
@@ -110,6 +112,8 @@ jobs:
             kv BASIC_AUTH_HASH "$BASIC_AUTH_HASH"
             kv OIDC_CLIENT_ID "$OIDC_CLIENT_ID"
             kv OIDC_CLIENT_SECRET "$OIDC_CLIENT_SECRET"
+            kv MESSAGE_KEY "$MESSAGE_KEY"
+            if [ -n "$MESSAGE_KEY_OLD" ]; then kv MESSAGE_KEY_OLD "$MESSAGE_KEY_OLD"; fi
             kv SESSION_SECRET "$SESSION_SECRET"
             kv ADMIN_EMAILS "$ADMIN_EMAILS"
             kv ALLOWED_DOMAIN "$ALLOWED_DOMAIN"

@@ -28,6 +28,8 @@ func TestRunRejectsDatabaseDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("APP_ENV", "test")
+	t.Setenv("MESSAGE_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	t.Setenv("MESSAGE_KEY_OLD", "")
 	t.Setenv("DATA_DIR", filepath.Join(blocker, "child"))
 	t.Setenv("PORT", freePort(t))
 	if err := run(context.Background(), discardLog()); err == nil {
@@ -39,6 +41,8 @@ func TestRunServesUntilCancel(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "data dir")
 	port := freePort(t)
 	t.Setenv("APP_ENV", "test")
+	t.Setenv("MESSAGE_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	t.Setenv("MESSAGE_KEY_OLD", "")
 	t.Setenv("DATA_DIR", dir)
 	t.Setenv("PORT", port)
 
@@ -84,6 +88,8 @@ func TestRunListenError(t *testing.T) {
 	dir := t.TempDir()
 	port := freePort(t)
 	t.Setenv("APP_ENV", "test")
+	t.Setenv("MESSAGE_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	t.Setenv("MESSAGE_KEY_OLD", "")
 	t.Setenv("DATA_DIR", dir)
 	t.Setenv("PORT", port)
 

@@ -37,6 +37,7 @@ func TestDevStatic(t *testing.T) {
 		StaticDir:     staticDir,
 		UploadDir:     uploadDir,
 	}
+	cfg.MessageKey = make([]byte, 32)
 	app := New(cfg, Deps{DB: openDB(t), Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	srv := httptest.NewServer(app)
 	t.Cleanup(func() {

@@ -150,6 +150,7 @@ SELECT
     partner.id AS partner_id,
     partner.name AS partner_name,
     partner.avatar_path AS partner_avatar_path,
+    lm.id AS last_message_id,
     lm.body AS last_body,
     lm.kind AS last_kind,
     lm.created_at AS last_created_at,
@@ -188,6 +189,7 @@ type ListChatsForUserRow struct {
 	PartnerID         int64
 	PartnerName       string
 	PartnerAvatarPath *string
+	LastMessageID     *int64
 	LastBody          *string
 	LastKind          *string
 	LastCreatedAt     *string
@@ -208,6 +210,7 @@ func (q *Queries) ListChatsForUser(ctx context.Context, id int64) ([]ListChatsFo
 			&i.PartnerID,
 			&i.PartnerName,
 			&i.PartnerAvatarPath,
+			&i.LastMessageID,
 			&i.LastBody,
 			&i.LastKind,
 			&i.LastCreatedAt,

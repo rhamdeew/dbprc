@@ -75,7 +75,7 @@ func (h *handlers) matchOnce(ctx context.Context, meID int64) (matchResult, erro
 	if len(fresh) > 0 {
 		row, res, err = openChat(ctx, q, meID, fresh)
 	} else {
-		row, res, err = reopenChat(ctx, q, meID)
+		row, res, err = h.reopenChat(ctx, q, meID)
 	}
 	if err != nil {
 		return matchResult{}, err
@@ -85,7 +85,7 @@ func (h *handlers) matchOnce(ctx context.Context, meID int64) (matchResult, erro
 	if err != nil {
 		return matchResult{}, err
 	}
-	view, err := chatView(rows, row.ID)
+	view, err := h.chatView(rows, row.ID)
 	if err != nil {
 		return matchResult{}, err
 	}
@@ -120,7 +120,7 @@ func openChat(ctx context.Context, q *sqlc.Queries, meID int64, fresh []int64) (
 	}, nil
 }
 
-func reopenChat(ctx context.Context, q *sqlc.Queries, meID int64) (sqlc.Chat, matchResult, error) {
+func (h *handlers) reopenChat(ctx context.Context, q *sqlc.Queries, meID int64) (sqlc.Chat, matchResult, error) {
 	chats, err := q.ListRematchChats(ctx, meID)
 	if err != nil {
 		return sqlc.Chat{}, matchResult{}, err
@@ -137,7 +137,7 @@ func reopenChat(ctx context.Context, q *sqlc.Queries, meID int64) (sqlc.Chat, ma
 	stored, err := q.InsertMessage(ctx, sqlc.InsertMessageParams{
 		ChatID:    row.ID,
 		Kind:      kindSystem,
-		Body:      rematchBody,
+		Body:      h.crypt.Encrypt(row.ID, rematchBody),
 		CreatedAt: now,
 	})
 	if err != nil {
@@ -147,7 +147,7 @@ func reopenChat(ctx context.Context, q *sqlc.Queries, meID int64) (sqlc.Chat, ma
 		return sqlc.Chat{}, matchResult{}, err
 	}
 	row.LastMessageAt = now
-	msg := domainMessage(stored)
+	msg := domainMessage(h.decryptMessage(stored))
 	return row, matchResult{
 		rematch: true,
 		message: &msg,
@@ -155,10 +155,10 @@ func reopenChat(ctx context.Context, q *sqlc.Queries, meID int64) (sqlc.Chat, ma
 	}, nil
 }
 
-func chatView(rows []sqlc.ListChatsForUserRow, id int64) (chatJSON, error) {
+func (h *handlers) chatView(rows []sqlc.ListChatsForUserRow, id int64) (chatJSON, error) {
 	for _, row := range rows {
 		if row.ID == id {
-			return toChatJSON(row), nil
+			return h.toChatJSON(row), nil
 		}
 	}
 	return chatJSON{}, fmt.Errorf("chat %d not visible", id)

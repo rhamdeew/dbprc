@@ -8,6 +8,7 @@ import (
 
 	"github.com/rhamdeew/dbprc/backend/internal/db"
 	"github.com/rhamdeew/dbprc/backend/internal/db/sqlc"
+	"github.com/rhamdeew/dbprc/backend/internal/msgcrypt"
 )
 
 var seq atomic.Int64
@@ -392,7 +393,7 @@ func chatUsers(t *testing.T, tx *sql.Tx, o chatOptions) (low, high int64) {
 	return low, high
 }
 
-// Message is a row from messages. SenderID is nil for a system line with no sender.
+// Message is a decrypted message. SenderID is nil for a system line with no sender.
 type Message struct {
 	ID        int64
 	ChatID    int64
@@ -448,7 +449,8 @@ func WithMessageBody(body string) MessageOption {
 	}
 }
 
-// CreateMessage inserts a message and moves the chat's last_message_at to that time.
+// CreateMessage encrypts with the fixed zero test key and moves last_message_at.
+// The returned Message contains plaintext.
 // A system message has a NULL sender unless WithSender is set.
 func CreateMessage(t *testing.T, database *db.DB, opts ...MessageOption) Message {
 	t.Helper()
@@ -488,20 +490,26 @@ func insertMessage(t *testing.T, tx *sql.Tx, opts ...MessageOption) Message {
 	if !o.bodySet {
 		body = fmt.Sprintf("message %d", nextSeq())
 	}
+	crypt, err := msgcrypt.New(make([]byte, 32), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted := crypt.Encrypt(chatID, body)
 	ts := nowRFC3339()
 	var (
 		msg       Message
 		senderOut sql.NullInt64
 	)
-	err := tx.QueryRowContext(t.Context(), `
+	err = tx.QueryRowContext(t.Context(), `
 		INSERT INTO messages (chat_id, sender_id, kind, body, created_at)
 		VALUES (?, ?, ?, ?, ?)
 		RETURNING id, chat_id, sender_id, kind, body, created_at`,
-		chatID, sender, kind, body, ts,
+		chatID, sender, kind, encrypted, ts,
 	).Scan(&msg.ID, &msg.ChatID, &senderOut, &msg.Kind, &msg.Body, &msg.CreatedAt)
 	if err != nil {
 		t.Fatalf("create message: %v", err)
 	}
+	msg.Body = body // Factories return the plaintext domain object.
 	if senderOut.Valid {
 		id := senderOut.Int64
 		msg.SenderID = &id

@@ -66,7 +66,12 @@ func TestLoad(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Load(env(tt.env))
+			values := map[string]string{"MESSAGE_KEY": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+			for k, v := range tt.env {
+				values[k] = v
+			}
+			got, err := Load(env(values))
+			tt.want.MessageKey = make([]byte, 32)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got %+v", got)
@@ -117,5 +122,23 @@ func TestDBPath(t *testing.T) {
 	cfg.DataDir = "/data"
 	if got, want := cfg.DBPath(), filepath.Join("/data", "arc.db"); got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestMessageKeys(t *testing.T) {
+	const valid = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	for _, environment := range []string{"dev", "test", "staging", "prod"} {
+		for _, raw := range []string{"", "not-base64", "c2hvcnQ=", valid + "junk"} {
+			if _, err := Load(env(map[string]string{"APP_ENV": environment, "MESSAGE_KEY": raw})); err == nil {
+				t.Fatalf("accepted invalid key in %s", environment)
+			}
+		}
+	}
+	if _, err := Load(env(map[string]string{"MESSAGE_KEY": valid, "MESSAGE_KEY_OLD": "bad"})); err == nil {
+		t.Fatal("accepted bad old key")
+	}
+	cfg, err := Load(env(map[string]string{"MESSAGE_KEY": valid, "MESSAGE_KEY_OLD": valid}))
+	if err != nil || len(cfg.MessageKeyOld) != 32 {
+		t.Fatalf("old key: %v", err)
 	}
 }

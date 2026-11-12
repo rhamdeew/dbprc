@@ -135,6 +135,7 @@ test('Bob\'s reply to Alice is nested', async () => {
   const wall = alicePage.getByRole('form', { name: 'Wall composer' });
   await wall.getByLabel('Write on this wall').fill('Hello from Alice');
   await wall.getByRole('button', { name: 'Post' }).click();
+  await expect(wall.getByLabel('Write on this wall')).toHaveValue('');
   await expect(alicePage.getByText('Hello from Alice')).toBeVisible();
 
   await bobPage.reload();
@@ -147,6 +148,7 @@ test('Bob\'s reply to Alice is nested', async () => {
   const reply = thread.getByRole('form', { name: 'Reply composer' });
   await reply.getByLabel('Write a reply').fill('Thanks Alice');
   await reply.getByRole('button', { name: 'Post' }).click();
+  await expect(reply).toHaveCount(0);
   await expect(bobPage.getByText('Thanks Alice')).toBeVisible();
 
   const nested = await bobPage.getByText('Thanks Alice').evaluate((el) => {
