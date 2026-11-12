@@ -34,11 +34,14 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 
 - ARC-37 encryption: `internal/msgcrypt` AES-256-GCM; required `MESSAGE_KEY`, optional `MESSAGE_KEY_OLD`; text/system bodies encrypted at rest, all chat REST/WebSocket views decrypted.
 
+- ARC-38 audit: `docs/audit/ARC-38.md`; 7 reproduced findings (S1 0/S2 5/S3 2), Backlog ARC-39–45 with screenshots; product code unchanged.
+
 ## Code map
 
 | Need | Where |
 |---|---|
 | Env config (only place that reads env) | `internal/config`: `MessageKey` / `MessageKeyOld` (decoded 32-byte keys), `AppBaseURL`, `SessionCookie` (default `arc_sid`), `AdminEmails`, `OIDCIssuer` (default `https://accounts.google.com`), `OIDCClientID`, `OIDCClientSecret`, `AllowedDomain`, `StaticDir` (dev/test only); `cfg.IsAdmin`, `config.Origin` |
+| Audit findings / evidence | `docs/audit/ARC-38.md`; Project Board Backlog ARC-39–45, screenshots attached; full evidence in run 61061 outputs |
 | Backups / restore | `deploy/backup/{backup,restore,test}.sh`, `Dockerfile`; `deploy/env/compose.yml` profile `backup`; `docs/OPERATIONS.md` |
 | Wiring | `cmd/arc` opens DB, `server.New(cfg, server.Deps{DB, Log})`. On shutdown, `Server.Close` (sockets, then session cleanup) runs before `http.Server.Shutdown` and the DB close |
 | Routes | `internal/server`: public `GET /healthz`, `GET /api/version`, `GET /auth/google/*`. `auth.Routes`: `GET /api/me`, `POST /auth/logout`, Google. `profile.Routes`: `GET /api/users/search`, `GET /api/users/{id}`, `PUT /api/me/interests`, `POST /api/me/avatar`, `POST /api/me/photos`, `DELETE /api/me/photos/{id}`. `wall.Routes`: `GET` and `POST /api/users/{id}/wall`, `DELETE /api/wall/{postId}` |
@@ -92,10 +95,14 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - CSP (Caddy and dev static): `default-src 'self'; img-src 'self' data: blob:; connect-src 'self' wss://{host}; frame-ancestors 'none'`. HSTS `max-age=31536000` is Caddy only. Inline styles are blocked; rules e2e reads (reply border, drawing-pad size) also live in `frontend/src/base.css`. CI: `govulncheck` v1.9.0 and `npm audit --audit-level=high`. Go is 1.27.4 (`backend/go.mod`, `backend/Dockerfile`) and `golang.org/x/image` is v0.45.0 so that scan is clean. `golangci-lint` is 2.15.0; 2.13.2 cannot typecheck this Go.
 - Admin: non-admin API is 404 `not_found` ("Not found."). Stats are six totals (`available != 0`). Preview counts are posts on that wall, posts they authored (a post can be both), their photos, their chats, and messages in those chats; unknown email is `{exists:false,...0}`; empty email is 400 `invalid`. DELETE `{email}` is 204. Unknown email is 404. Deleting yourself is 409 `self_delete` with no audit. One writer transaction collects avatar, photo, and drawing paths (their wall and posts they authored), deletes session rows whose blob `uid` is that user (`sessions` has no user FK), deletes the user, and inserts `admin_audit` (`action` `delete_user`, `admin_email` stored, `target_email_sha256` hex SHA-256 of the trimmed lower-cased stored email). Files go after commit; a missing file is fine; a failed delete is 500 and the row is already gone. slog logs ids and the hash, never an email. `/admin` (`pages/AdminPage.tsx`) shows one card per stat. Preview trims the email and lists the five counts; an unknown email is zeros plus "No profile with that email." and no delete. Delete stays disabled until the confirm field trims to that email (case-sensitive), then `DELETE /api/admin/users`. Success toast is "Profile removed." and stats refetch. A non-admin opening `/admin` is sent to `/` (then their profile), the same as an unknown path; this app has no 404 page. No user list. A deleted user can sign in again and gets a new empty profile (no posts, no photos, interests unset).
 
+- Audit follow-ups: CSP blocks Mantine generated theme/responsive styles (mobile messenger stays in a row); the mobile header also clips search independently. Hidden open threads acknowledge unseen messages. Truncated PNGs return 500. Non-admin `/admin` redirects home contrary to ARC-35/36. Long interest words overflow; emoji interest input uses UTF-16 maxLength. Track fixes in ARC-39–45, not in this audit.
+
 ## Open questions for the human
 
 - Human must generate distinct staging/prod `MESSAGE_KEY` GitHub Environment secrets and save recovery copies in the password manager before deploying ARC-37; optional `MESSAGE_KEY_OLD` supports one rotation. Deploy wiring is included.
 - Human configures per-environment R2/restic secrets (`st-arc` staging, `arc` prod); optional `BACKUP_PING_URL`. Follow `docs/OPERATIONS.md` for isolated staging restore credentials.
+
+- Human prioritizes audit Backlog ARC-39–45; native browser notification delivery and non-ASCII case folding expectations need confirmation (see audit questions).
 
 ## How to update (every card)
 
