@@ -101,6 +101,15 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Shellcheck
+        run: make lint-backup
+      - name: Backup and restore round trip
+        run: make test-backup
+
   docker:
     runs-on: ubuntu-latest
     strategy:
