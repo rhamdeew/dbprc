@@ -48,6 +48,9 @@ func NewServer(t *testing.T, opts ...ServerOption) *httptest.Server {
 	if o.log == nil {
 		o.log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	if len(o.cfg.MessageKey) == 0 {
+		o.cfg.MessageKey = make([]byte, 32)
+	}
 	database := NewDB(t)
 	unstarted := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	if o.cfg.AppBaseURL == "" {

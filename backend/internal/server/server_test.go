@@ -22,6 +22,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 		AppBaseURL:    "http://arc.test",
 		SessionCookie: "arc_sid",
 	}
+	cfg.MessageKey = make([]byte, 32)
 	app := New(cfg, Deps{DB: openDB(t), Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	srv := httptest.NewServer(app)
 	t.Cleanup(func() {

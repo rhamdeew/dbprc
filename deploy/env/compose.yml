@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      MESSAGE_KEY: ${MESSAGE_KEY:?MESSAGE_KEY is required}
+      MESSAGE_KEY_OLD: ${MESSAGE_KEY_OLD:-}
       DATA_DIR: /data
       UPLOAD_DIR: /uploads
     volumes:

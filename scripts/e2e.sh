@@ -70,7 +70,9 @@ echo "building api and mockoidc"
 "$tmpdir/mockoidc" >"$tmpdir/mock.log" 2>&1 &
 mock_pid=$!
 
-APP_ENV=dev \
+MESSAGE_KEY="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
+  MESSAGE_KEY_OLD="" \
+  APP_ENV=dev \
   PORT="$port" \
   DATA_DIR="$tmpdir/data" \
   UPLOAD_DIR="$tmpdir/uploads" \

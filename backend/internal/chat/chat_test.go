@@ -18,6 +18,7 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/config"
 	"github.com/rhamdeew/dbprc/backend/internal/db"
 	"github.com/rhamdeew/dbprc/backend/internal/httpx"
+	"github.com/rhamdeew/dbprc/backend/internal/msgcrypt"
 	"github.com/rhamdeew/dbprc/backend/internal/server"
 	"github.com/rhamdeew/dbprc/backend/internal/testutil"
 )
@@ -177,7 +178,7 @@ func TestRandomRematch(t *testing.T) {
 	if n := countWhere(t, database, `SELECT count(*) FROM chats`); n != 2 {
 		t.Fatalf("chats %d", n)
 	}
-	if n := countWhere(t, database, `SELECT count(*) FROM messages WHERE kind = 'system' AND body = 'Matched again ☕'`); n != 2 {
+	if n := countWhere(t, database, `SELECT count(*) FROM messages WHERE kind = 'system' AND body LIKE 'v1:%'`); n != 2 {
 		t.Fatalf("system messages %d", n)
 	}
 }
@@ -718,7 +719,7 @@ func (r *recorder) snapshot() ([]notifiedChat, []notifiedMsg) {
 func newServer(t *testing.T, notifier chat.Notifier) *httptest.Server {
 	t.Helper()
 	database := testutil.NewDB(t)
-	cfg := config.Config{Env: "test", Version: "test"}
+	cfg := config.Config{Env: "test", Version: "test", MessageKey: make([]byte, 32)}
 	unstarted := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	cfg.AppBaseURL = "http://" + unstarted.Listener.Addr().String()
 	app := server.New(cfg, server.Deps{
@@ -1062,4 +1063,56 @@ func lastBody(page messagesView) string {
 		return ""
 	}
 	return page.Messages[len(page.Messages)-1].Body
+}
+
+func TestEncryptedStorageRotationAndCorruptRows(t *testing.T) {
+	oldKey, newKey := make([]byte, 32), bytes.Repeat([]byte{1}, 32)
+	srv := testutil.NewServer(t,
+		testutil.WithConfig(config.Config{Env: "test", MessageKey: newKey, MessageKeyOld: oldKey}))
+	database := testutil.Database(t, srv)
+	me := testutil.CreateUser(t, database)
+	other := testutil.CreateUser(t, database)
+	row := testutil.CreateChat(t, database, testutil.WithChatUsers(me.ID, other.ID))
+	client := testutil.LoginAs(t, srv, me)
+	old := testutil.CreateMessage(t, database, testutil.WithChat(row.ID), testutil.WithMessageBody("old private message"))
+	page := getMessages(t, client, srv, row.ID, "")
+	if len(page.Messages) != 1 || page.Messages[0].Body != old.Body {
+		t.Fatalf("old history: %+v", page)
+	}
+	if list := getChats(t, client, srv); list[0].LastMessage.Body != old.Body {
+		t.Fatal("old preview")
+	}
+	code, raw := do(t, client, http.MethodPost, chatMessagesURL(srv, row.ID), map[string]any{"body": "new private message"})
+	if code != http.StatusCreated {
+		t.Fatalf("post %d %s", code, raw)
+	}
+	var sent messageView
+	mustDecode(t, raw, &sent)
+	if sent.Body != "new private message" {
+		t.Fatal("encrypted post response")
+	}
+	var stored string
+	if err := database.Reader().QueryRowContext(t.Context(), "SELECT body FROM messages WHERE id = ?", sent.ID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(stored, "v1:") || strings.Contains(stored, "new private message") {
+		t.Fatal("plaintext stored")
+	}
+	current, err := msgcrypt.New(newKey, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain, err := current.Decrypt(row.ID, stored); err != nil || plain != sent.Body {
+		t.Fatal("write did not use current key")
+	}
+	if _, err := database.Writer().ExecContext(t.Context(), "UPDATE messages SET body = ? WHERE id = ?", "corrupted-private-body", sent.ID); err != nil {
+		t.Fatal(err)
+	}
+	page = getMessages(t, client, srv, row.ID, "")
+	if len(page.Messages) != 2 || page.Messages[0].Body != old.Body || page.Messages[1].Body != "[message unavailable]" {
+		t.Fatalf("damaged history: %+v", page)
+	}
+	if list := getChats(t, client, srv); list[0].LastMessage.Body != "[message unavailable]" {
+		t.Fatal("damaged preview")
+	}
 }

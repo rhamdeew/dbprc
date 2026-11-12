@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
@@ -21,6 +22,8 @@ const DefaultOIDCIssuer = "https://accounts.google.com"
 
 // Config holds runtime settings. Add new fields here; read them only in Load.
 type Config struct {
+	MessageKey       []byte // decoded AES-256 key; required in every environment
+	MessageKeyOld    []byte // optional previous key for reads during rotation
 	Env              string // dev | test | staging | prod
 	Port             int
 	Version          string
@@ -81,6 +84,17 @@ func Load(getenv func(string) string) (Config, error) {
 	// would skip that and the Basic Auth in front of it.
 	if cfg.StaticDir != "" && cfg.Env != "dev" && cfg.Env != "test" {
 		return Config{}, fmt.Errorf("STATIC_DIR is only allowed when APP_ENV is dev or test")
+	}
+	key, err := messageKey(getenv("MESSAGE_KEY"))
+	if err != nil {
+		return Config{}, fmt.Errorf("MESSAGE_KEY must be base64 of exactly 32 bytes")
+	}
+	cfg.MessageKey = key
+	if raw := getenv("MESSAGE_KEY_OLD"); raw != "" {
+		cfg.MessageKeyOld, err = messageKey(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("MESSAGE_KEY_OLD must be base64 of exactly 32 bytes")
+		}
 	}
 	return cfg, nil
 }
@@ -175,4 +189,12 @@ func oidcIssuer(raw string) (string, error) {
 		return "", fmt.Errorf("invalid OIDC_ISSUER %q", raw)
 	}
 	return issuer, nil
+}
+
+func messageKey(raw string) ([]byte, error) {
+	key, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil || len(key) != 32 {
+		return nil, fmt.Errorf("invalid message key")
+	}
+	return key, nil
 }

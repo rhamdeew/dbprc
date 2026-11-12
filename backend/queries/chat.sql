@@ -61,6 +61,7 @@ SELECT
     partner.id AS partner_id,
     partner.name AS partner_name,
     partner.avatar_path AS partner_avatar_path,
+    lm.id AS last_message_id,
     lm.body AS last_body,
     lm.kind AS last_kind,
     lm.created_at AS last_created_at,

@@ -54,6 +54,12 @@ Sign-in is Google OIDC: `GET /auth/google/start` redirects to the issuer with PK
 
 `make dev` also starts `backend/cmd/mockoidc` on 127.0.0.1:9999. The issuer is `http://localhost:9999/oidc` (mockoidc's fixed base path). `.env.dev.example` sets `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `ALLOWED_DOMAIN` for that process, and `APP_BASE_URL` to vite's origin (`http://localhost:5173`).
 
+## Chat encryption at rest
+
+`MESSAGE_KEY` is required in every environment: base64 of exactly 32 random bytes. Optional `MESSAGE_KEY_OLD` has the same format. `internal/msgcrypt` uses AES-256-GCM with a fresh 12-byte nonce per message and the decimal chat id as additional authenticated data. `messages.body` stores `v1:` followed by base64(nonce + ciphertext + tag), for text and system messages. Writes use the current key; reads try current then old. API responses, chat previews and WebSocket events contain decrypted text. A damaged, plaintext or otherwise unreadable row becomes `[message unavailable]`; logs contain only message/chat ids. Existing rows are not migrated. Wall posts remain plaintext.
+
+This is server-side encryption, not end-to-end: the API can read chats. Keys stay outside SQLite and backups; staging and prod use different keys. Missing or malformed keys fail startup. Losing all copies of a key loses the messages encrypted with it. See `docs/OPERATIONS.md` for key storage, rotation and restores.
+
 ## Encrypted backups
 
 A profiled `backup` service mounts data and uploads read-only, uses SQLite `VACUUM INTO` for a consistent DB snapshot, and sends encrypted restic snapshots to R2 at 03:00 UTC in staging and prod. Retention is 7 daily, 4 weekly, 6 monthly snapshots. Upload files are copied live (there is no cross-volume transaction with the database). Production deploy takes a backup after pulling images and before switching.
