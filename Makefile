@@ -74,3 +74,13 @@ generate: ensure-sqlc ## regenerate sqlc code (idempotent; CI checks the result 
 images:           ## build production images locally
 	docker build -t ghcr.io/rhamdeew/dbprc-api:local --build-arg VERSION=local backend
 	docker build -t ghcr.io/rhamdeew/dbprc-web:local -f deploy/env/web.Dockerfile .
+
+.PHONY: lint-backup test-backup test-backup-deploy
+lint-backup:      ## backup and deployment shell checks
+	shellcheck deploy/backup/*.sh deploy/env/deploy.sh
+
+test-backup-deploy:
+	deploy/backup/deploy_test.sh
+
+test-backup: test-backup-deploy ## real restic/SQLite round trip in Docker (no R2 credentials)
+	deploy/backup/test.sh

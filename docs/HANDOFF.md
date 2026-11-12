@@ -30,11 +30,14 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - ARC-35 admin page: `/admin` stat cards, email preview counts, confirm by typing the email again, delete toast and stats refresh. Nav link stays admin-only.
 - ARC-36 admin e2e: `e2e/tests/admin.spec.ts`. `make e2e` sets `ADMIN_EMAILS=admin@example.com`. Admin deletes B after a chat and wall posts; A's chat and B's posts on A's wall are gone; B signs in again to an empty profile; a non-admin `/admin` is sent home and `GET /api/admin/stats` is 404.
 
+- ARC-09 backups: `deploy/backup` restic image, 03:00 UTC in both envs, prod pre-deploy snapshot, validated host restore; `make lint-backup test-backup` in CI.
+
 ## Code map
 
 | Need | Where |
 |---|---|
 | Env config (only place that reads env) | `internal/config`: `AppBaseURL`, `SessionCookie` (default `arc_sid`), `AdminEmails`, `OIDCIssuer` (default `https://accounts.google.com`), `OIDCClientID`, `OIDCClientSecret`, `AllowedDomain`, `StaticDir` (dev/test only); `cfg.IsAdmin`, `config.Origin` |
+| Backups / restore | `deploy/backup/{backup,restore,test}.sh`, `Dockerfile`; `deploy/env/compose.yml` profile `backup`; `docs/OPERATIONS.md` |
 | Wiring | `cmd/arc` opens DB, `server.New(cfg, server.Deps{DB, Log})`. On shutdown, `Server.Close` (sockets, then session cleanup) runs before `http.Server.Shutdown` and the DB close |
 | Routes | `internal/server`: public `GET /healthz`, `GET /api/version`, `GET /auth/google/*`. `auth.Routes`: `GET /api/me`, `POST /auth/logout`, Google. `profile.Routes`: `GET /api/users/search`, `GET /api/users/{id}`, `PUT /api/me/interests`, `POST /api/me/avatar`, `POST /api/me/photos`, `DELETE /api/me/photos/{id}`. `wall.Routes`: `GET` and `POST /api/users/{id}/wall`, `DELETE /api/wall/{postId}` |
 | Middleware | `sessions.LoadAndSave`, then `httpx.CSRF(APP_BASE_URL)`, then `logRequests`. `httpx.RequireUser` on `/api/me`, profile, wall, chat, admin, and `GET /ws` puts `sqlc.User` in the context (`httpx.UserFrom`). `httpx.RequireAdmin` on `/api/admin/*` then 404s anyone whose email is not in `ADMIN_EMAILS`. Inside that, `httpx.LimitBody` then `httpx.RateLimit` on the routes in the gotcha below. `statusRecorder.Unwrap` so `/ws` can hijack |
@@ -61,6 +64,8 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 
 ## Gotchas / next steps already known
 
+- Backup env belongs to Compose/scripts, not Go config. Deploy renders `COMPOSE_PROFILES=backup` only with a nonempty `RESTIC_REPOSITORY`; cron runs in both envs. Prod aborts before switching if its pre-deploy backup fails. `restore.sh` downloads and checks SQLite before stopping API; failed apply leaves API stopped. Read-only source volumes still require the API-created WAL/SHM when WAL is active.
+
 - CSRF allows a mutating request when `Origin` equals the origin of `APP_BASE_URL` (path on the base URL is ignored). If `Origin` is absent, only `Sec-Fetch-Site: same-origin` (exact, lowercase) is allowed. `LoginAs` overwrites `Origin` with the test server URL, so a test that sets `AppBaseURL` to something else must send `Origin` itself.
 - `sqlite3store` uses `$1` and `julianday` on `*sql.DB`. It works with `modernc.org/sqlite`. Do not add `mattn/go-sqlite3`. Call `Server.Close` (or `session.Manager.Close`) once or the cleanup goroutine leaks; a second `StopCleanup` from the library would block. Do not write the HTTP response while a `Writer()` transaction is open: `WriteHeader` commits the session and needs that single connection.
 - A user deleted from `users` is 401 and the session row is removed. An expired `sessions.expiry` is 401.
@@ -86,7 +91,7 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 
 ## Open questions for the human
 
-- (none)
+- Human configures per-environment R2/restic secrets (`st-arc` staging, `arc` prod); optional `BACKUP_PING_URL`. Follow `docs/OPERATIONS.md` for isolated staging restore credentials.
 
 ## How to update (every card)
 

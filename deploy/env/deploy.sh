@@ -36,6 +36,16 @@ wait_for() { # <tag>
   return 1
 }
 
+# Prod takes a fresh snapshot before any running service or active config is changed.
+# --env-file supplies the incoming credentials; backup has no env_file dependency.
+if grep -qx "APP_ENV='prod'" .env.new && grep -qx "COMPOSE_PROFILES='backup'" .env.new; then
+  if ! compose .env.new run --rm -T backup backup.sh; then
+    echo "pre-deploy backup failed, nothing changed" >&2
+    rm -f .env.new
+    exit 1
+  fi
+fi
+
 # 2. Switch.
 if [[ -f .env ]]; then cp .env .env.prev; fi
 mv .env.new .env
