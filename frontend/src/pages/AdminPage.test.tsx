@@ -216,12 +216,18 @@ describe('admin page', () => {
     expect(screen.getByRole('textbox', { name: 'Email' })).toHaveValue('');
   });
 
-  it('sends a non-admin to the home route', async () => {
+  it('shows not found without requesting admin data for a non-admin', async () => {
     server.use(http.get('/api/me', () => HttpResponse.json(member)));
+    let statsCalls = 0;
+    server.use(http.get('/api/admin/stats', () => {
+      statsCalls += 1;
+      return HttpResponse.json(stats);
+    }));
     renderPage();
 
-    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent('/');
+    expect(await screen.findByRole('heading', { name: '404 · Page not found' })).toBeInTheDocument();
+    expect(screen.getByTestId('location').textContent).toBe('/admin');
+    expect(statsCalls).toBe(0);
     expect(screen.queryByRole('heading', { name: 'Admin' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Remove profile' })).not.toBeInTheDocument();
   });

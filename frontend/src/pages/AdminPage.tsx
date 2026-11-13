@@ -13,7 +13,6 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useState, type FormEvent } from 'react';
-import { Navigate } from 'react-router';
 import {
   useAdminStats,
   usePreviewRemoval,
@@ -24,6 +23,7 @@ import {
 import { ApiError } from '../api/client';
 import { useMe } from '../api/me';
 import { Panel } from '../components/Panel';
+import { NotFoundPage } from './NotFoundPage';
 
 const statFields: { key: keyof AdminStats; label: string }[] = [
   { key: 'users', label: 'Users' },
@@ -229,7 +229,7 @@ export function AdminPage() {
       </Center>
     );
   }
-  if (!me.data?.isAdmin) return <Navigate to="/" replace />;
+  if (!me.data?.isAdmin) return <NotFoundPage />;
 
   return (
     <Stack gap="md">

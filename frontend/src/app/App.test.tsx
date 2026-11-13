@@ -94,9 +94,12 @@ describe('app shell', () => {
     expect(screen.getByRole('heading', { name: 'Admin' })).toBeInTheDocument();
   });
 
-  it('sends a non-admin away from /admin', async () => {
+  it('shows not found to a non-admin at /admin without redirecting', async () => {
     renderAt('/admin');
-    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '404 · Page not found' })).toBeInTheDocument();
+    expect(screen.getByTestId('location').textContent).toBe('/admin');
+    expect(screen.queryByRole('region', { name: 'Stats' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Remove profile' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Admin' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
   });
@@ -110,7 +113,7 @@ describe('app shell', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/messenger');
   });
 
-  it('opens a chat and sends unknown paths to the profile', async () => {
+  it('opens a chat', async () => {
     renderAt('/messenger/42');
     expect(await screen.findByRole('heading', { name: 'Chat' })).toBeInTheDocument();
     expect(await screen.findByRole('textbox', { name: 'Message' })).toBeInTheDocument();
@@ -118,10 +121,12 @@ describe('app shell', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/messenger/42');
   });
 
-  it('sends an unknown path to the signed-in profile', async () => {
+  it.each([member, admin])('shows not found for an unknown path for $name', async (viewer) => {
+    server.use(http.get('/api/me', () => HttpResponse.json(viewer)));
     renderAt('/nope');
-    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent('/u/7');
+    expect(await screen.findByRole('heading', { name: '404 · Page not found' })).toBeInTheDocument();
+    expect(screen.getByTestId('location').textContent).toBe('/nope');
+    expect(screen.getByText('We couldn’t find that page.')).toBeInTheDocument();
   });
 
   it('logs out, clears the cache, and opens login', async () => {

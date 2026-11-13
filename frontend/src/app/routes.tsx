@@ -5,6 +5,7 @@ import { AdminPage } from '../pages/AdminPage';
 import { LoginPage } from '../pages/LoginPage';
 import { MessengerPage } from '../pages/MessengerPage';
 import { ProfilePage } from '../pages/ProfilePage';
+import { NotFoundPage } from '../pages/NotFoundPage';
 import { RequireAuth } from './RequireAuth';
 
 function OwnProfile() {
@@ -23,7 +24,7 @@ export function AppRoutes() {
           <Route path="/u/:id" element={<ProfilePage />} />
           <Route path="/messenger/:chatId?" element={<MessengerPage />} />
           <Route path="/admin" element={<AdminPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
     </Routes>

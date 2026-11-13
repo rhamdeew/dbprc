@@ -167,13 +167,21 @@ test('Owen can sign in again and gets an empty profile', async () => {
   }
 });
 
-test('a non-admin opening /admin is sent home and the admin API is 404', async () => {
-  await noraPage!.goto('/admin');
-  await noraPage!.waitForURL(new RegExp(`${noraProfile}$`));
-  await expect(noraPage!.getByRole('heading', { level: 1, name: 'Nora North' })).toBeVisible();
-  await expect(noraPage!.getByRole('heading', { name: 'Admin' })).toHaveCount(0);
-  await expect(noraPage!.getByRole('link', { name: 'Admin' })).toHaveCount(0);
-  await expect(noraPage!.getByRole('heading', { name: 'Remove profile' })).toHaveCount(0);
+test('a non-admin sees not found at /admin and unknown routes, including after reload', async () => {
+  for (const path of ['/admin', '/unknown-route']) {
+    await noraPage!.goto(path);
+    for (const reload of [false, true]) {
+      if (reload) await noraPage!.reload();
+      await expect(noraPage!.getByRole('heading', { level: 1, name: '404 · Page not found' })).toBeVisible();
+      expect(profilePath(noraPage!)).toBe(path);
+      await expect(noraPage!.getByText('We couldn’t find that page.')).toBeVisible();
+      await expect(noraPage!.getByRole('heading', { name: 'Nora North' })).toHaveCount(0);
+      await expect(noraPage!.getByRole('heading', { name: 'Admin' })).toHaveCount(0);
+      await expect(noraPage!.getByRole('link', { name: 'Admin' })).toHaveCount(0);
+      await expect(noraPage!.getByRole('region', { name: 'Stats' })).toHaveCount(0);
+      await expect(noraPage!.getByRole('region', { name: 'Remove profile' })).toHaveCount(0);
+    }
+  }
 
   const denied = await noraPage!.request.get('/api/admin/stats');
   expect(denied.status()).toBe(404);
