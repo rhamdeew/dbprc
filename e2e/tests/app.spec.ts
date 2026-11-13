@@ -111,6 +111,49 @@ test('truncated PNGs show a friendly validation error before and after reload', 
   }
 });
 
+test('500-character interest words wrap within the panel after repeated saves and reloads', async () => {
+  const word = 'A'.repeat(500);
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    await alicePage.setViewportSize(viewport);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await alicePage.getByRole('button', { name: 'Edit Hobby' }).click();
+      await alicePage.getByLabel('Hobby', { exact: true }).fill(word);
+      await alicePage.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(alicePage.getByText(word, { exact: true })).toBeVisible();
+      await alicePage.reload();
+      const value = alicePage.getByText(word, { exact: true });
+      await expect(value).toBeVisible();
+      const geometry = await value.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const panel = element.closest('.mantine-Paper-root')!.getBoundingClientRect();
+        return {
+          height: box.height,
+          lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+          left: box.left,
+          right: box.right,
+          panelLeft: panel.left,
+          panelRight: panel.right,
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
+          documentWidth: document.documentElement.scrollWidth,
+        };
+      });
+      expect(geometry.height).toBeGreaterThan(geometry.lineHeight);
+      expect(geometry.left).toBeGreaterThanOrEqual(geometry.panelLeft);
+      expect(geometry.right).toBeLessThanOrEqual(geometry.panelRight);
+      expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
+      expect(geometry.documentWidth).toBeLessThanOrEqual(viewport.width);
+      const response = await aliceContext.request.get(new URL(aliceProfileURL).pathname.replace('/u/', '/api/users/'));
+      expect(response.ok()).toBe(true);
+      expect((await response.json()).interests.hobby).toBe(word);
+      await alicePage.getByRole('button', { name: 'Edit Hobby' }).click();
+      await expect(alicePage.getByLabel('Hobby', { exact: true })).toHaveValue(word);
+      await alicePage.getByRole('button', { name: 'Cancel', exact: true }).click();
+    }
+  }
+  await alicePage.setViewportSize({ width: 1280, height: 800 });
+});
+
 test('Alice edits an interest, uploads a photo, and opens the lightbox', async () => {
   await alicePage.getByRole('button', { name: 'Edit Hobby' }).click();
   await alicePage.getByLabel('Hobby').fill('Chess');
