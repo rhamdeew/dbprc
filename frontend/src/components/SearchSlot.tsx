@@ -33,7 +33,7 @@ export function SearchSlot() {
   const byId = new Map(people.map((person) => [String(person.id), person]));
 
   return (
-    <Box role="search" aria-label="Search" miw={180} w={220}>
+    <Box role="search" aria-label="Search" miw={0} w={{ base: '100%', sm: 220 }}>
       <Autocomplete
         aria-label="Search colleagues"
         placeholder="Search colleagues"

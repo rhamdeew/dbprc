@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { checkMobileShell } from './mobile-shell';
 import { readFileSync } from 'node:fs';
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 
@@ -85,6 +86,10 @@ test.afterAll(async () => {
   await api?.dispose();
   await aliceContext?.close();
   await bobContext?.close();
+});
+
+test('mobile shell controls fit and work with the keyboard before and after reload', async () => {
+  await checkMobileShell(alicePage, alice.name);
 });
 
 test('truncated PNGs show a friendly validation error before and after reload', async () => {

@@ -1,5 +1,7 @@
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 
+import { checkMobileShell } from './mobile-shell';
+
 const mockOrigin = process.env.E2E_MOCK_ORIGIN ?? 'http://127.0.0.1:9999';
 
 // admin.email is ADMIN_EMAILS in scripts/e2e.sh (same address as .env.dev.example).
@@ -112,6 +114,7 @@ test.afterAll(async () => {
 
 test('an admin deletes Owen after the chat and the wall posts', async () => {
   await signIn(api!, adminPage!, admin);
+  await checkMobileShell(adminPage!, admin.name, true);
   await adminPage!.goto('/admin');
   await expect(adminPage!.getByRole('heading', { level: 1, name: 'Admin' })).toBeVisible();
   await expect(adminPage!.getByRole('link', { name: 'Admin' })).toBeVisible();
