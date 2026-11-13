@@ -154,6 +154,37 @@ test('500-character interest words wrap within the panel after repeated saves an
   await alicePage.setViewportSize({ width: 1280, height: 800 });
 });
 
+test('interest paste keeps 500 emoji intact and truncates 501 by code point', async () => {
+  const emoji = '😀'.repeat(500);
+  await aliceContext.grantPermissions(['clipboard-read', 'clipboard-write']);
+  try {
+    for (const pasted of [emoji, `${emoji}😁`, `${'A'.repeat(499)}😀😁`]) {
+      const expected = Array.from(pasted).slice(0, 500).join('');
+      await alicePage.getByRole('button', { name: 'Edit Hobby' }).click();
+      const input = alicePage.getByLabel('Hobby', { exact: true });
+      await input.fill('');
+      await alicePage.evaluate((text) => navigator.clipboard.writeText(text), pasted);
+      await input.focus();
+      await alicePage.keyboard.press('ControlOrMeta+V');
+      await expect(input).toHaveValue(expected);
+      const saved = alicePage.waitForResponse((response) =>
+        response.url().endsWith('/api/me/interests') && response.request().method() === 'PUT');
+      await alicePage.getByRole('button', { name: 'Save', exact: true }).click();
+      const response = await saved;
+      expect(response.ok()).toBe(true);
+      expect(response.request().postDataJSON().hobby).toBe(expected);
+      expect((await response.json()).hobby).toBe(expected);
+      await alicePage.reload();
+      await expect(alicePage.getByText(expected, { exact: true })).toBeVisible();
+      await alicePage.getByRole('button', { name: 'Edit Hobby' }).click();
+      await expect(input).toHaveValue(expected);
+      await alicePage.getByRole('button', { name: 'Cancel', exact: true }).click();
+    }
+  } finally {
+    await aliceContext.clearPermissions();
+  }
+});
+
 test('Alice edits an interest, uploads a photo, and opens the lightbox', async () => {
   await alicePage.getByRole('button', { name: 'Edit Hobby' }).click();
   await alicePage.getByLabel('Hobby').fill('Chess');

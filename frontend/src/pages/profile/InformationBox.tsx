@@ -41,8 +41,7 @@ export function InformationBox({ profile }: InformationBoxProps) {
                 <TextInput
                   label={field.label}
                   value={draft}
-                  maxLength={500}
-                  onChange={(event) => setDraft(event.currentTarget.value)}
+                  onChange={(event) => setDraft(Array.from(event.currentTarget.value).slice(0, 500).join(''))}
                 />
                 <Group gap="xs">
                   <Button type="button" size="compact-sm" loading={save.isPending} onClick={submit}>
