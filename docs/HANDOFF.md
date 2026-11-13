@@ -29,20 +29,14 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - ARC-34 admin API: `httpx.RequireAdmin` (non-admin 404), `GET /api/admin/stats`, `GET /api/admin/users/preview?email=`, `DELETE /api/admin/users` (cascade, files after commit, `admin_audit`).
 - ARC-35 admin page: `/admin` stat cards, email preview counts, confirm by typing the email again, delete toast and stats refresh. Nav link stays admin-only.
 - ARC-36 admin e2e: `e2e/tests/admin.spec.ts`. `make e2e` sets `ADMIN_EMAILS=admin@example.com`. Admin deletes B after a chat and wall posts; A's chat and B's posts on A's wall are gone; B signs in again to an empty profile; a non-admin `/admin` shows the neutral not-found page and `GET /api/admin/stats` is 404.
-
 - ARC-09 backups: `deploy/backup` restic image, 03:00 UTC in both envs, prod pre-deploy snapshot, validated host restore; `make lint-backup test-backup` in CI.
-
 - ARC-37 encryption: `internal/msgcrypt` AES-256-GCM; required `MESSAGE_KEY`, optional `MESSAGE_KEY_OLD`; text/system bodies encrypted at rest, all chat REST/WebSocket views decrypted.
-
 - ARC-38 audit: `docs/audit/ARC-38.md`; 7 reproduced findings (S1 0/S2 5/S3 2), Backlog ARC-39–45 with screenshots; product code unchanged.
-
 - ARC-39 CSP styles: Caddy and dev static allow `style-src 'self' 'unsafe-inline'` for Mantine; browser regression in `e2e/tests/app.spec.ts` checks theme, shell spacing and mobile stacking across reloads.
-
 - ARC-40 background unread: open threads acknowledge only while the document is visible; visibility return advances the cursor. Regression coverage in `MessengerPage.test.tsx` and `e2e/tests/app.spec.ts`.
-
 - ARC-41 upload validation: decoder failures return 400 `invalid_image`; exact 24-byte PNG handler/browser regressions verify rejection, cleanup and friendly copy.
-
 - ARC-42 not found: non-admin `/admin` and unknown routes render `pages/NotFoundPage.tsx` in place; unit and browser regressions cover both, including reloads.
+- ARC-43 mobile shell: 84px two-row header below `sm`, 42px desktop; full-width mobile search. `e2e/tests/mobile-shell.ts` checks geometry and keyboard navigation for regular/admin users across reloads.
 
 ## Code map
 
@@ -62,7 +56,7 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 | Migrations | `backend/migrations/` (goose, embedded). `sessions` table already matches sqlite3store. New file = new UTC timestamp |
 | Images | `upload.URL(rel)` → `/uploads/...`. `avatarUrl` uses it, or null. First Google login saves `picture` via `upload.Store` (failure leaves avatar null). `POST /api/me/avatar` replaces the path and deletes the previous file (a missing file is fine). `upload.ErrInvalidImage` marks header/bitmap decoder failures before any file write. A rejected 6th photo and `DELETE /api/me/photos/{id}` remove the file |
 | Test DB / HTTP | `testutil.NewDB`, `NewServer` (sets `AppBaseURL` to the server URL when empty), `Database(t, srv)`, `LoginAs` (Origin = server URL, session cookie when the handler is `*server.Server`), `SessionCookie` |
-| Frontend | `frontend/src`: `theme/theme.ts`, `api/client.ts` (`api`, `uploadFile`; `silent` skips the error toast), `api/me.ts`, `api/admin.ts`, `api/auth.ts`, `api/profile.ts`, `api/wall.ts`, `api/search.ts`, `api/chat.ts`, `api/realtime.ts`, `pages/LoginPage.tsx`, `pages/AdminPage.tsx` (`/admin`), `pages/ProfilePage.tsx` (`/u/:id`, wall in `pages/profile/WallSection.tsx`), `pages/MessengerPage.tsx` (`/messenger/:chatId?`, panes and `notifications.ts` in `pages/messenger/`), `pages/NotFoundPage.tsx` (neutral 404), `app/routes.tsx`, `components/SearchSlot.tsx` (top-bar colleague search), `components/DrawingPad` |
+| Frontend | `frontend/src`: `theme/theme.ts`, `api/client.ts` (`api`, `uploadFile`; `silent` skips the error toast), `api/me.ts`, `api/admin.ts`, `api/auth.ts`, `api/profile.ts`, `api/wall.ts`, `api/search.ts`, `api/chat.ts`, `api/realtime.ts`, `pages/LoginPage.tsx`, `pages/AdminPage.tsx` (`/admin`), `pages/ProfilePage.tsx` (`/u/:id`, wall in `pages/profile/WallSection.tsx`), `pages/MessengerPage.tsx` (`/messenger/:chatId?`, panes and `notifications.ts` in `pages/messenger/`), `pages/NotFoundPage.tsx` (neutral 404), `app/routes.tsx`, `components/Shell.tsx` (responsive header), `components/SearchSlot.tsx` (top-bar colleague search), `components/DrawingPad` |
 | Dev static / e2e | `server.serveDevStatic` when `STATIC_DIR` is set: files as-is, other GET/HEAD → `index.html`; `GET /uploads/` serves `UPLOAD_DIR` with `Content-Disposition: inline`. Same CSP as Caddy (no HSTS). Outside session middleware. `e2e/` Playwright (`app.spec.ts`, `admin.spec.ts`). `make e2e` uses `APP_ENV=dev`, `127.0.0.1:18080` (`E2E_PORT`), mockoidc `:9999`, `ADMIN_EMAILS=admin@example.com` |
 
 ## Conventions established
@@ -103,14 +97,14 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - CSP (Caddy and dev static): `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://{host}; frame-ancestors 'none'`. HSTS `max-age=31536000` is Caddy only. Inline styles are allowed for Mantine generated theme/responsive styles; Caddy serves static HTML with no nonce injection. Scripts remain self-only via default-src. Existing reply border/drawing-pad rules also live in `frontend/src/base.css`. CI: `govulncheck` v1.9.0 and `npm audit --audit-level=high`. Go is 1.27.4 (`backend/go.mod`, `backend/Dockerfile`) and `golang.org/x/image` is v0.45.0 so that scan is clean. `golangci-lint` is 2.15.0; 2.13.2 cannot typecheck this Go.
 - Admin: non-admin API is 404 `not_found` ("Not found."). Stats are six totals (`available != 0`). Preview counts are posts on that wall, posts they authored (a post can be both), their photos, their chats, and messages in those chats; unknown email is `{exists:false,...0}`; empty email is 400 `invalid`. DELETE `{email}` is 204. Unknown email is 404. Deleting yourself is 409 `self_delete` with no audit. One writer transaction collects avatar, photo, and drawing paths (their wall and posts they authored), deletes session rows whose blob `uid` is that user (`sessions` has no user FK), deletes the user, and inserts `admin_audit` (`action` `delete_user`, `admin_email` stored, `target_email_sha256` hex SHA-256 of the trimmed lower-cased stored email). Files go after commit; a missing file is fine; a failed delete is 500 and the row is already gone. slog logs ids and the hash, never an email. `/admin` (`pages/AdminPage.tsx`) shows one card per stat. Preview trims the email and lists the five counts; an unknown email is zeros plus "No profile with that email." and no delete. Delete stays disabled until the confirm field trims to that email (case-sensitive), then `DELETE /api/admin/users`. Success toast is "Profile removed." and stats refetch. A non-admin opening `/admin` and any signed-in user opening an unknown path see the same neutral 404 page without a redirect or admin data request. No user list. A deleted user can sign in again and gets a new empty profile (no posts, no photos, interests unset).
 
-- Audit follow-ups: The mobile header clips search independently of CSP. Long interest words overflow; emoji interest input uses UTF-16 maxLength. Track remaining fixes in ARC-43–45.
+- Audit follow-ups: Long interest words overflow; emoji interest input uses UTF-16 maxLength. Track remaining fixes in ARC-44–45.
 
 ## Open questions for the human
 
 - Human must generate distinct staging/prod `MESSAGE_KEY` GitHub Environment secrets and save recovery copies in the password manager before deploying ARC-37; optional `MESSAGE_KEY_OLD` supports one rotation. Deploy wiring is included.
 - Human configures per-environment R2/restic secrets (`st-arc` staging, `arc` prod); optional `BACKUP_PING_URL`. Follow `docs/OPERATIONS.md` for isolated staging restore credentials.
 
-- Human prioritizes remaining audit Backlog ARC-43–45; native browser notification delivery and non-ASCII case folding expectations need confirmation (see audit questions).
+- Human prioritizes remaining audit Backlog ARC-44–45; native browser notification delivery and non-ASCII case folding expectations need confirmation (see audit questions).
 
 ## How to update (every card)
 
