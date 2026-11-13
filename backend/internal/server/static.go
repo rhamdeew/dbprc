@@ -52,7 +52,7 @@ func serveDevStatic(next http.Handler, cfg config.Config) http.Handler {
 
 func setSecurityHeaders(w http.ResponseWriter, r *http.Request) {
 	host := r.Host
-	csp := "default-src 'self'; img-src 'self' data: blob:; connect-src 'self'"
+	csp := "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'"
 	if host != "" && !strings.ContainsAny(host, " ;\t\"'\\") {
 		csp += " wss://" + host
 	}

@@ -65,6 +65,7 @@ let bobContext: BrowserContext;
 let alicePage: Page;
 let bobPage: Page;
 let api: APIRequestContext;
+let aliceProfileURL: string;
 
 test.beforeAll(async ({ browser, playwright }) => {
   api = await playwright.request.newContext();
@@ -75,6 +76,7 @@ test.beforeAll(async ({ browser, playwright }) => {
   alicePage = await aliceContext.newPage();
   bobPage = await bobContext.newPage();
   await signIn(api, alicePage, alice);
+  aliceProfileURL = alicePage.url();
   await signIn(api, bobPage, bob);
 });
 
@@ -201,6 +203,55 @@ test('a random chat shows up live and both people can write', async () => {
   await bobComposer.getByLabel('Message').fill('Hello from Bob');
   await bobComposer.getByRole('button', { name: 'Send' }).click();
   await expect(alicePage.getByRole('log', { name: 'Messages' })).toContainText('Hello from Bob');
+});
+
+test('CSP allows the theme, shell spacing, and mobile messenger styles after reload', async () => {
+  const chatURL = alicePage.url();
+  const styleViolations: string[] = [];
+  await alicePage.exposeFunction('recordStyleViolation', (directive: string) => {
+    styleViolations.push(directive);
+  });
+  await alicePage.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (event) => {
+      if (event.effectiveDirective.startsWith('style-src')) {
+        void (window as unknown as { recordStyleViolation: (directive: string) => Promise<void> })
+          .recordStyleViolation(event.effectiveDirective);
+      }
+    });
+  });
+
+  await alicePage.setViewportSize({ width: 1280, height: 800 });
+  await alicePage.goto(aliceProfileURL);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await alicePage.reload();
+    const heading = alicePage.getByRole('heading', { level: 1, name: alice.name });
+    await expect(heading).toBeVisible();
+    await expect(alicePage.locator('body')).toHaveCSS('font-family', 'Tahoma, Verdana, sans-serif');
+    await expect(alicePage.locator('body')).toHaveCSS('font-size', '12px');
+    const header = alicePage.locator('header');
+    await expect(header).toHaveCSS('background-color', 'rgb(59, 89, 152)');
+    const headerBox = await header.boundingBox();
+    const headingBox = await heading.boundingBox();
+    expect(headerBox).not.toBeNull();
+    expect(headingBox).not.toBeNull();
+    expect(headingBox!.y).toBeGreaterThanOrEqual(headerBox!.y + headerBox!.height);
+    expect(styleViolations).toEqual([]);
+  }
+
+  await alicePage.setViewportSize({ width: 390, height: 844 });
+  await alicePage.goto(chatURL);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await alicePage.reload();
+    await expect(alicePage.getByRole('heading', { level: 2, name: bob.name })).toBeVisible();
+    // This is the Flex containing both the chat list and the message pane.
+    const panes = alicePage.locator('main .mantine-Flex-root').filter({
+      has: alicePage.getByRole('form', { name: 'Message composer' }),
+    });
+    await expect(panes).toHaveCSS('flex-direction', 'column');
+    await expect(alicePage.getByRole('form', { name: 'Message composer' })).toBeVisible();
+    expect(styleViolations).toEqual([]);
+  }
+  await alicePage.setViewportSize({ width: 1280, height: 800 });
 });
 
 test('a hosted domain outside the company shows the login error', async ({ browser }) => {
