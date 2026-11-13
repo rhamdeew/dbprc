@@ -105,10 +105,9 @@ func TestDevStatic(t *testing.T) {
 				tt.path != "/healthz" && !strings.HasPrefix(tt.path, "/api/")
 			if served {
 				csp := resp.Header.Get("Content-Security-Policy")
-				for _, part := range []string{"default-src 'self'", "img-src 'self' data: blob:", "frame-ancestors 'none'", "wss://" + req.Host} {
-					if !strings.Contains(csp, part) {
-						t.Fatalf("csp %q missing %s", csp, part)
-					}
+				wantCSP := "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://" + req.Host + "; frame-ancestors 'none'"
+				if csp != wantCSP {
+					t.Fatalf("csp %q, want %q", csp, wantCSP)
 				}
 				if resp.Header.Get("X-Content-Type-Options") != "nosniff" || resp.Header.Get("Referrer-Policy") != "same-origin" {
 					t.Fatalf("headers %v", resp.Header)
@@ -160,5 +159,20 @@ func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Production serves static HTML through Caddy, so its policy must match E2E's.
+func TestCaddyMatchesDevCSP(t *testing.T) {
+	caddy, err := os.ReadFile("../../../deploy/env/Caddyfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://arc.test/", nil)
+	rec := httptest.NewRecorder()
+	setSecurityHeaders(rec, req)
+	policy := strings.ReplaceAll(rec.Header().Get("Content-Security-Policy"), "wss://arc.test", "wss://{host}")
+	if !strings.Contains(string(caddy), `Content-Security-Policy "`+policy+`"`) {
+		t.Fatalf("Caddy must use dev CSP %q", policy)
 	}
 }
