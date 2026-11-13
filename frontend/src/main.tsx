@@ -1,14 +1,15 @@
 import '@mantine/core/styles.css';
-import { MantineProvider } from '@mantine/core';
+import '@mantine/notifications/styles.css';
+import './base.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { HomePage } from './pages/HomePage';
-import { theme } from './theme/theme';
+import { BrowserRouter } from 'react-router';
+import { App } from './app/App';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <MantineProvider theme={theme}>
-      <HomePage />
-    </MantineProvider>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
   </StrictMode>,
 );

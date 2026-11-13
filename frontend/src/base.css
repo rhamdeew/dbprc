@@ -1,0 +1,30 @@
+/* Styles that must survive the page CSP (inline style attributes are blocked).
+   Colors match theme.ts. Keep the style attributes too: Vitest does not load CSS. */
+
+body {
+  margin: 0;
+  background: #ffffff;
+}
+
+.arc-chat-row:hover {
+  background: #f7f8fb;
+}
+
+.arc-wall-post {
+  border-top: 1px solid #d8dfea;
+}
+
+.arc-wall-replies {
+  border-left: 2px solid #d8dfea;
+}
+
+.arc-drawing-pad {
+  width: 400px;
+  height: 200px;
+  touch-action: none;
+  background-color: #ffffff;
+  /* An outline, not a border: the canvas box must stay exactly 400x200 for pointer mapping. */
+  outline: 1px solid #d8dfea;
+  cursor: crosshair;
+  display: block;
+}
