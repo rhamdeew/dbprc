@@ -76,6 +76,47 @@ func TestAvailability(t *testing.T) {
 	}
 }
 
+func TestAvailableCount(t *testing.T) {
+	srv := newServer(t, nil)
+	database := testutil.Database(t, srv)
+	me := testutil.CreateUser(t, database, testutil.WithName("Me"))
+	client := testutil.LoginAs(t, srv, me)
+
+	count := func() int64 {
+		t.Helper()
+		code, raw := do(t, client, http.MethodGet, srv.URL+"/api/chats/available", nil)
+		if code != http.StatusOK {
+			t.Fatalf("available %d %s", code, raw)
+		}
+		var keys map[string]any
+		mustDecode(t, raw, &keys)
+		if len(keys) != 1 {
+			t.Fatalf("keys %v", keys)
+		}
+		var body struct {
+			Count int64 `json:"count"`
+		}
+		mustDecode(t, raw, &body)
+		return body.Count
+	}
+
+	// I am available, but I am not counted.
+	if got := count(); got != 0 {
+		t.Fatalf("alone: count %d", got)
+	}
+	testutil.CreateUser(t, database, testutil.WithName("On One"))
+	on := testutil.CreateUser(t, database, testutil.WithName("On Two"))
+	testutil.CreateUser(t, database, testutil.WithName("Off"), testutil.WithAvailable(false))
+	// A chat with one of them does not take them out of the pool.
+	testutil.CreateChat(t, database, testutil.WithChatUsers(me.ID, on.ID))
+	if got := count(); got != 2 {
+		t.Fatalf("count %d, want 2", got)
+	}
+
+	code, raw := do(t, http.DefaultClient, http.MethodGet, srv.URL+"/api/chats/available", nil)
+	requireCode(t, code, raw, http.StatusUnauthorized, "unauthenticated", "")
+}
+
 func TestRandomPrefersFreshPartner(t *testing.T) {
 	srv := newServer(t, nil)
 	database := testutil.Database(t, srv)

@@ -5,7 +5,7 @@
 | Topic | Rule |
 |---|---|
 | Identity | Sign in with Google only. Accept ID tokens with `hd == ALLOWED_DOMAIN` and `email_verified == true` (checked server-side from the token claims). Account is created on first login. Name + avatar come from Google; the name is not editable. No passwords. |
-| Gate | Basic Auth in front of everything (per environment) + company Google domain. `/healthz` is exempt from Basic Auth. |
+| Gate | Basic Auth in front of everything (per environment) + company Google domain. `/healthz` and `/ws` are exempt from Basic Auth (`/ws` still needs a session cookie and the app's own `Origin`; see `docs/SECURITY.md`). |
 | Profile | Avatar, interests (hobby, music, movies, other), up to 5 extra photos shown in a lightbox. |
 | Wall | Anyone can post on anyone's wall: text and/or a drawing. Replies are 2 levels max (a reply to a reply attaches to the root). The wall owner can delete any post on their wall. |
 | Anonymous posts | Author is stored. It is visible **only to the wall owner**; everyone else sees "Anonymous". The poster is warned about this in the UI. |

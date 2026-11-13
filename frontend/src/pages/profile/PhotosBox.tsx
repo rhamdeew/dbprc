@@ -1,4 +1,4 @@
-import { ActionIcon, Box, Button, Group, Modal, SimpleGrid, Stack, Text, Title, UnstyledButton } from '@mantine/core';
+import { ActionIcon, Box, Button, Group, Modal, SimpleGrid, Stack, Text, UnstyledButton } from '@mantine/core';
 import { useState } from 'react';
 import Lightbox from 'yet-another-react-lightbox';
 import 'yet-another-react-lightbox/styles.css';
@@ -28,35 +28,32 @@ export function PhotosBox({ profile }: PhotosBoxProps) {
   }
 
   return (
-    <Panel>
+    <Panel
+      title={`Photos (${profile.photos.length}/${maxPhotos})`}
+      action={
+        profile.isMe && !atLimit ? (
+          <FilePicker label="Add photo" inputLabel="Add a photo" disabled={add.isPending} onPick={(file) => add.mutate(file)} />
+        ) : null
+      }
+    >
       <Stack gap="sm">
-        <Group justify="space-between" align="center">
-          <Title order={2}>Photos ({profile.photos.length}/{maxPhotos})</Title>
-          {profile.isMe && !atLimit ? (
-            <FilePicker
-              label="Add photo"
-              inputLabel="Add a photo"
-              disabled={add.isPending}
-              onPick={(file) => add.mutate(file)}
-            />
-          ) : null}
-        </Group>
         <UploadProgress value={progress} label="Photo upload" />
         {profile.photos.length === 0 ? (
           <Text c="dimmed">No photos yet.</Text>
         ) : (
-          <SimpleGrid cols={{ base: 3, sm: 4 }} spacing="xs">
+          <SimpleGrid cols={{ base: 3, sm: 5 }} spacing={6}>
             {profile.photos.map((photo, photoIndex) => (
-              <Box key={photo.id} pos="relative" w={72} h={72}>
+              <Box key={photo.id} pos="relative">
                 <UnstyledButton
                   type="button"
                   aria-label={`Open photo ${photoIndex + 1}`}
                   onClick={() => setIndex(photoIndex)}
-                  w={72}
-                  h={72}
+                  display="block"
+                  w="100%"
+                  h={100}
                   style={{ border: `1px solid ${BORDER}`, overflow: 'hidden' }}
                 >
-                  <img src={photo.url} alt="" width={72} height={72} style={{ objectFit: 'cover', display: 'block' }} />
+                  <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 </UnstyledButton>
                 {profile.isMe ? (
                   <ActionIcon

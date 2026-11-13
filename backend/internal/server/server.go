@@ -3,8 +3,10 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/rhamdeew/dbprc/backend/internal/admin"
 	"github.com/rhamdeew/dbprc/backend/internal/auth"
@@ -92,6 +94,7 @@ func New(cfg config.Config, deps Deps) *Server {
 	handler = sessions.LoadAndSave(handler)
 	handler = httpx.CSRF(cfg.AppBaseURL)(handler)
 	handler = logRequests(log, handler)
+	handler = recoverPanics(log, handler)
 	// Outside the session middleware so assets do not touch the database.
 	// No-op unless STATIC_DIR is set (dev and E2E).
 	handler = serveDevStatic(handler, cfg)
@@ -149,11 +152,35 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter 
 
 func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 		if r.URL.Path == "/healthz" {
 			return
 		}
-		log.Info("http", "method", r.Method, "path", r.URL.Path, "status", rec.status)
+		// For /ws this is the lifetime of the socket.
+		log.Info("http", "method", r.Method, "path", r.URL.Path, "status", rec.status, "ms", time.Since(start).Milliseconds())
+	})
+}
+
+// recoverPanics turns a handler panic into a logged 500 with the API error
+// shape. Without it net/http drops the connection and the client sees a
+// network error. http.ErrAbortHandler keeps its meaning and is passed on.
+// The 500 is best effort: if the handler already sent headers, only the log
+// line is useful.
+func recoverPanics(log *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			v := recover()
+			if v == nil {
+				return
+			}
+			if err, ok := v.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+				panic(v)
+			}
+			log.Error("panic", "value", v, "method", r.Method, "path", r.URL.Path)
+			httpx.WriteError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
+		}()
+		next.ServeHTTP(w, r)
 	})
 }

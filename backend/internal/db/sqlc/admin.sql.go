@@ -183,11 +183,17 @@ func (q *Queries) ListAvatarPath(ctx context.Context, id int64) (*string, error)
 }
 
 const listDrawingPathsByUser = `-- name: ListDrawingPathsByUser :many
-SELECT drawing_path
-FROM wall_posts
-WHERE drawing_path IS NOT NULL
-  AND drawing_path != ''
-  AND (wall_owner_id = ?1 OR author_id = ?1)
+SELECT p.drawing_path
+FROM wall_posts p
+WHERE p.drawing_path IS NOT NULL
+  AND p.drawing_path != ''
+  AND (
+    p.wall_owner_id = ?1
+    OR p.author_id = ?1
+    -- Replies other people wrote under this user's posts on a third wall.
+    -- The delete cascades to those rows through parent_id.
+    OR p.parent_id IN (SELECT r.id FROM wall_posts r WHERE r.author_id = ?1)
+  )
 `
 
 func (q *Queries) ListDrawingPathsByUser(ctx context.Context, userID int64) ([]*string, error) {

@@ -51,6 +51,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
 		Handler:           app,
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	errCh := make(chan error, 1)

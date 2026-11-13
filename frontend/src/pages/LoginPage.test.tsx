@@ -16,9 +16,10 @@ describe('login page', () => {
   it('shows the wordmark, tagline, and a Google link with no next', () => {
     renderLogin('/login');
 
-    expect(screen.getByText('ARC')).toBeInTheDocument();
+    expect(screen.getByText('[arc]')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.getByText('Async Random Coffee: meet your teammates when you have time')).toBeInTheDocument();
+    expect(screen.getByText(/^Async Random Coffee/)).toBeInTheDocument();
+    expect(screen.getByText('Meet your teammates when you have time')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sign in with Google' })).toHaveAttribute('href', '/auth/google/start');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'ARC' })).not.toBeInTheDocument();

@@ -74,6 +74,25 @@ export function useChats() {
   });
 }
 
+/** Sum of `unreadCount` over every chat, or 0 until the list has loaded. */
+export function useUnreadTotal(): number {
+  const chats = useChats();
+  return (chats.data ?? []).reduce((sum, chat) => sum + chat.unreadCount, 0);
+}
+
+export const availableCountKey = ['chats-available'] as const;
+
+/** How many other colleagues can be matched right now. A failure is silent: the line is just not shown. */
+export function useAvailableCount() {
+  return useQuery({
+    queryKey: availableCountKey,
+    queryFn: () => api<{ count: number }>('/api/chats/available', { silent: true }),
+    select: (data) => (typeof data?.count === 'number' ? data.count : 0),
+    refetchInterval: 60_000,
+    retry: false,
+  });
+}
+
 export function useMessages(chatId: number | null) {
   return useInfiniteQuery<MessagePage, Error, MessageCache, ReturnType<typeof messagesKey>, number>({
     queryKey: messagesKey(chatId ?? 0),

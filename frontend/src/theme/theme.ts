@@ -6,6 +6,15 @@ export const PANEL = '#edeff4';
 export const BORDER = '#d8dfea';
 /** Top bar blue. Shade 6 of `arcBlue`. */
 export const HEADER = '#3b5998';
+/** Darker edge on the top bar and on primary buttons. */
+export const HEADER_DARK = '#29447e';
+/** Page background. Panels sit on it with a `BORDER` hairline. */
+export const PAGE = '#ffffff';
+/** My own chat bubble. */
+export const BUBBLE = '#e3e8f2';
+export const BUBBLE_BORDER = '#c9d2e3';
+/** Bevel on a primary call-to-action button. */
+export const BEVEL = { border: `1px solid ${HEADER_DARK}`, boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.3)' };
 /** Centered column every page sits in. */
 export const CONTENT_WIDTH = 980;
 
@@ -88,6 +97,12 @@ export const theme = createTheme({
     Popover: { defaultProps: { shadow: flat, radius: 2 } },
     Menu: { defaultProps: { shadow: flat } },
     Tooltip: { defaultProps: { shadow: flat, radius: 2 } },
+    // Dense controls. A call site can still pass its own size.
+    Button: { defaultProps: { size: 'xs' } },
+    TextInput: { defaultProps: { size: 'xs' } },
+    Textarea: { defaultProps: { size: 'xs' } },
+    Checkbox: { defaultProps: { size: 'xs' } },
+    Switch: { defaultProps: { size: 'xs' } },
   },
 });
 
@@ -99,12 +114,12 @@ export const cssVariablesResolver: CSSVariablesResolver = () => ({
     '--arc-content-width': `${CONTENT_WIDTH}px`,
   },
   light: {
-    '--mantine-color-body': PANEL,
+    '--mantine-color-body': PAGE,
     '--mantine-color-text': '#333333',
     '--mantine-color-default-border': BORDER,
   },
   dark: {
-    '--mantine-color-body': PANEL,
+    '--mantine-color-body': PAGE,
     '--mantine-color-text': '#333333',
     '--mantine-color-default-border': BORDER,
   },

@@ -1,21 +1,32 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
+	"image"
+	"image/color"
+	"image/png"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/oauth2-proxy/mockoidc"
 )
 
-const nextUserPath = "/_mock/next-user"
+const (
+	nextUserPath = "/_mock/next-user"
+	avatarPath   = "/_mock/avatar.png"
+)
 
 // server is a mockoidc provider plus POST /_mock/next-user.
 type server struct {
@@ -23,6 +34,10 @@ type server struct {
 	http       *http.Server
 	publicHost string
 	log        *slog.Logger
+
+	// interactive makes an authorize request with an empty queue show the
+	// sign-in form. It is off for E2E, where the queue decides who signs in.
+	interactive atomic.Bool
 
 	mu    sync.Mutex
 	queue []*identity
@@ -70,6 +85,7 @@ func newServer(ctx context.Context, listen, host string, log *slog.Logger) (*ser
 	mux.HandleFunc(mockoidc.JWKSEndpoint, oidc.JWKS)
 	mux.HandleFunc(mockoidc.DiscoveryEndpoint, oidc.Discovery)
 	mux.HandleFunc("POST "+nextUserPath, srv.handleNextUser)
+	mux.HandleFunc("GET "+avatarPath, handleAvatar)
 
 	srv.http = &http.Server{
 		Addr:              host,
@@ -135,11 +151,25 @@ func (s *server) closeNewConns() {
 // The library pops that identity only after the request validates, so a
 // rejected authorize puts a queued identity back. A synthetic default user
 // is dropped, so a stray 400 cannot block a later POST /_mock/next-user.
+//
+// Interactive mode adds one step in front: with nothing queued, the first GET
+// shows a form, and the form submits back here with mock_email (and
+// mock_name). That identity is used for this request only.
 func (s *server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	queued := len(s.queue) > 0
+	if !queued && s.interactive.Load() && r.Method == http.MethodGet {
+		picked, shown := s.pickIdentity(w, r)
+		if shown {
+			return
+		}
+		s.oidc.QueueUser(picked)
+		s.oidc.Authorize(w, r)
+		s.drainLibraryQueue()
+		return
+	}
 	user := s.popLocked()
 	s.oidc.QueueUser(user)
 	s.oidc.Authorize(w, r)
@@ -147,6 +177,89 @@ func (s *server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	if queued && len(leftover) > 0 {
 		s.queue = append(leftover, s.queue...)
 	}
+}
+
+var pickTmpl = template.Must(template.New("pick").Parse(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Mock Google sign-in</title>
+<style>body{font:13px Tahoma,Verdana,sans-serif;max-width:360px;margin:60px auto;padding:0 16px}
+input,button{display:block;width:100%;box-sizing:border-box;margin:6px 0 12px;padding:6px}
+.error{color:#b00020}.hint{color:#666}</style>
+</head><body><h1>Mock Google sign-in</h1>
+<p class="hint">Local development only. Any @{{.Domain}} address signs in; {{.Default}} is the default. Use a second browser profile or a private window to be two people at once.</p>
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+<form method="get" action="">
+{{range $k, $v := .Params}}{{range $v}}<input type="hidden" name="{{$k}}" value="{{.}}">{{end}}{{end}}
+<label>Email<input name="mock_email" type="email" value="{{.Email}}" autofocus required></label>
+<label>Name (optional)<input name="mock_name" value="{{.Name}}"></label>
+<button type="submit">Sign in</button>
+</form></body></html>`))
+
+// pickIdentity returns the identity named by mock_email. When the parameter
+// is missing or not an email it writes the form and reports shown.
+// hd is the email's domain, the way Google Workspace sets it, so an address
+// outside ALLOWED_DOMAIN exercises the app's domain error.
+func (s *server) pickIdentity(w http.ResponseWriter, r *http.Request) (user *identity, shown bool) {
+	q := r.URL.Query()
+	email := strings.TrimSpace(q.Get("mock_email"))
+	name := strings.TrimSpace(q.Get("mock_name"))
+	if email != "" && validEmail(email) {
+		at := strings.LastIndex(email, "@")
+		if name == "" {
+			name = email[:at]
+		}
+		user = newIdentity(email, name, strings.ToLower(email[at+1:]), true)
+		user.Picture = s.origin() + avatarPath + "?seed=" + url.QueryEscape(email)
+		return user, false
+	}
+	params := url.Values{}
+	for key, values := range q {
+		if key != "mock_email" && key != "mock_name" {
+			params[key] = values
+		}
+	}
+	data := map[string]any{
+		"Params":  params,
+		"Domain":  defaultHD,
+		"Default": defaultEmail,
+		"Email":   defaultEmail,
+		"Name":    name,
+		"Error":   "",
+	}
+	if email != "" {
+		data["Email"] = email
+		data["Error"] = "Enter a full email address."
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := pickTmpl.Execute(w, data); err != nil {
+		s.log.Warn("sign-in form", "err", err.Error())
+	}
+	return nil, true
+}
+
+// handleAvatar is a checkerboard whose color depends on ?seed=, so two mock
+// people are easy to tell apart.
+func handleAvatar(w http.ResponseWriter, r *http.Request) {
+	sum := sha256.Sum256([]byte(r.URL.Query().Get("seed")))
+	fill := color.RGBA{R: sum[0]/2 + 64, G: sum[1]/2 + 64, B: sum[2]/2 + 64, A: 255}
+	const size, cell = 96, 24
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	for y := range size {
+		for x := range size {
+			if (x/cell+y/cell)%2 == 0 {
+				img.Set(x, y, fill)
+			} else {
+				img.Set(x, y, color.White)
+			}
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		http.Error(w, "avatar", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	_, _ = w.Write(buf.Bytes())
 }
 
 func (s *server) popLocked() *identity {

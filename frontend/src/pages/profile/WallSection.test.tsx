@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { MemoryRouter } from 'react-router';
 import { setupVitestCanvasMock } from 'vitest-canvas-mock';
 import { describe, expect, it } from 'vitest';
 import { wallPageSize, type WallPost, type WallRoot } from '../../api/wall';
@@ -40,7 +41,12 @@ function createdPost(overrides: Partial<WallPost> = {}): WallPost {
 }
 
 function renderWall(userId = 9) {
-  return render(<WallSection userId={userId} />);
+  // Author names link to profiles, so the wall needs a router.
+  return render(
+    <MemoryRouter>
+      <WallSection userId={userId} />
+    </MemoryRouter>,
+  );
 }
 
 function mockWall(posts: WallRoot[]) {
@@ -312,9 +318,14 @@ describe('wall section', () => {
     renderWall(4);
 
     expect(await screen.findByText('Anonymous · Ada Lovelace')).toBeInTheDocument();
+    // The owner sees the name, but an anonymous post does not link to the profile.
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.getByText('secret')).toBeInTheDocument();
     expect(screen.getByText('5 minutes ago')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Drawing' })).toHaveAttribute('src', '/uploads/drawings/2.png');
+    const drawing = screen.getByRole('img', { name: 'Drawing' });
+    expect(drawing).toHaveAttribute('src', '/uploads/drawings/2.png');
+    // Shown at the size it was drawn, whatever the stored bitmap or a failed load would give.
+    expect(drawing).toHaveStyle({ width: '400px', maxWidth: '100%' });
     expect(document.querySelector('img[src="/uploads/avatars/ada.png"]')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
   });
@@ -337,6 +348,9 @@ describe('wall section', () => {
     expect(screen.queryByText(/Anonymous ·/)).not.toBeInTheDocument();
     expect(screen.queryByText('Ada Lovelace')).not.toBeInTheDocument();
     expect(screen.getByText('Grace Hopper')).toBeInTheDocument();
+    // Only the signed post links to its author.
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Grace Hopper' })).toHaveAttribute('href', '/u/3');
     expect(screen.getByText('public note')).toBeInTheDocument();
     expect(document.querySelector('img[src="/uploads/avatars/grace.png"]')).not.toBeNull();
     expect(screen.getAllByText('5 minutes ago')).toHaveLength(2);

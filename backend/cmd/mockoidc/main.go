@@ -3,11 +3,14 @@
 // because that is github.com/oauth2-proxy/mockoidc's issuer base.
 // The default user is dev@example.com with hd=example.com. POST /_mock/next-user
 // queues a different identity for the next successful login.
+// With -interactive (make dev) an authorize request with nothing queued shows
+// a small form instead, so each browser profile can sign in as someone else.
 package main
 
 import (
 	"context"
 	"errors"
+	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -28,21 +31,24 @@ const (
 )
 
 func main() {
+	interactive := flag.Bool("interactive", false, "ask for the email to sign in as when no identity is queued")
+	flag.Parse()
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, listenAddr, publicHost, log); err != nil {
+	if err := run(ctx, listenAddr, publicHost, log, *interactive); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, listen, host string, log *slog.Logger) error {
+func run(ctx context.Context, listen, host string, log *slog.Logger, interactive bool) error {
 	srv, err := newServer(ctx, listen, host, log)
 	if err != nil {
 		return err
 	}
-	log.Info("listening", "addr", listen, "issuer", srv.issuer(), "client_id", devClientID)
+	srv.interactive.Store(interactive)
+	log.Info("listening", "addr", listen, "issuer", srv.issuer(), "client_id", devClientID, "interactive", interactive)
 
 	select {
 	case err := <-srv.serveErr:

@@ -13,6 +13,9 @@ services:
     volumes:
       - data:/data
       - uploads:/uploads
+    # The API closes sockets and drains requests for up to 15s on SIGTERM.
+    # Docker's default 10s would kill it mid-shutdown.
+    stop_grace_period: 20s
 
   web:
     image: ghcr.io/rhamdeew/dbprc-web:${TAG:?TAG is required}
