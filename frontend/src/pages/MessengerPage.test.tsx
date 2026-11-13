@@ -401,6 +401,39 @@ describe('messenger', () => {
     expect(screen.getAllByRole('link', { name: /Grace Hopper|Alan Turing|Linus Torvalds/ })).toHaveLength(3);
   });
 
+  it('keeps an open hidden thread unread and acknowledges the latest message on return', async () => {
+    setDocumentHidden(true);
+    const reads: unknown[] = [];
+    server.use(
+      http.get('/api/chats', () => HttpResponse.json([chat(5, 'Grace Hopper', 1, 'earlier')])),
+      http.get('/api/chats/:id/messages', () => HttpResponse.json({ messages: [line(3, 'earlier')] })),
+      http.post('/api/chats/:id/read', async ({ request }) => {
+        const body = await request.json();
+        reads.push(body);
+        return HttpResponse.json(body);
+      }),
+    );
+    renderAt('/messenger/5');
+    await screen.findByRole('log', { name: 'Messages' });
+    await waitFor(() => expect(document.title).toBe('(1) ARC'));
+    await waitFor(() => expect(clients.length).toBeGreaterThan(0));
+
+    for (const id of [4, 5]) {
+      act(() => push({ type: 'message.new', data: { chatId: 5, message: line(id, `hidden ${id}`) } }));
+      await waitFor(() => expect(document.title).toBe(`(${id - 2}) ARC`));
+      expect(screen.getByLabelText(`${id - 2} unread`)).toBeInTheDocument();
+      expect(reads).toEqual([]);
+    }
+
+    act(() => {
+      setDocumentHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(reads).toEqual([{ lastMessageId: 5 }]));
+    await waitFor(() => expect(document.title).toBe('ARC'));
+    expect(screen.queryByLabelText(/unread/)).not.toBeInTheDocument();
+  });
+
   it('refetches the list and the open thread after the socket reconnects', async () => {
     const waits: number[] = [];
     vi.spyOn(reconnectClock, 'cancel').mockImplementation(() => {});

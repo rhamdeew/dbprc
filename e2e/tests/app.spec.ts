@@ -205,6 +205,63 @@ test('a random chat shows up live and both people can write', async () => {
   await expect(alicePage.getByRole('log', { name: 'Messages' })).toContainText('Hello from Bob');
 });
 
+test('an open background thread retains server unread counts until visibility returns', async () => {
+  const chatId = Number(alicePage.url().split('/').pop());
+  await waitForOpenSocket(alicePage);
+  await expect(alicePage).toHaveTitle('ARC');
+  const readRequests: string[] = [];
+  const recordRead = (request: { url(): string }) => {
+    if (request.url().endsWith(`/api/chats/${chatId}/read`)) readRequests.push(request.url());
+  };
+  alicePage.on('request', recordRead);
+  // Headless Chromium does not reliably background pages across browser contexts.
+  // Instrument the Page Visibility API explicitly, as in the ARC-38 audit.
+  await alicePage.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  try {
+    for (const count of [1, 2]) {
+      const composer = bobPage.getByRole('form', { name: 'Message composer' });
+      await composer.getByLabel('Message').fill(`Background message ${count}`);
+      await composer.getByRole('button', { name: 'Send' }).click();
+      await expect(alicePage.getByRole('log', { name: 'Messages' })).toContainText(`Background message ${count}`);
+      await expect(alicePage).toHaveTitle(`(${count}) ARC`);
+      await expect(alicePage.getByLabel(`${count} unread`, { exact: true })).toBeVisible();
+      const response = await aliceContext.request.get('/api/chats');
+      expect(response.ok()).toBe(true);
+      const chats = await response.json() as { id: number; unreadCount: number }[];
+      expect(chats.find((chat) => chat.id === chatId)?.unreadCount).toBe(count);
+      expect(readRequests).toEqual([]);
+    }
+    const acknowledged = alicePage.waitForResponse((response) =>
+      response.url().endsWith(`/api/chats/${chatId}/read`) && response.ok());
+    await alicePage.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    const response = await acknowledged;
+    const cursor = await response.json() as { lastMessageId: number };
+    const messagesResponse = await aliceContext.request.get(`/api/chats/${chatId}/messages`);
+    const { messages } = await messagesResponse.json() as { messages: { id: number }[] };
+    expect(cursor.lastMessageId).toBe(messages.at(-1)?.id);
+    await expect(alicePage).toHaveTitle('ARC');
+    await expect(alicePage.getByLabel(/unread/)).toHaveCount(0);
+    const chatsResponse = await aliceContext.request.get('/api/chats');
+    const chats = await chatsResponse.json() as { id: number; unreadCount: number }[];
+    expect(chats.find((chat) => chat.id === chatId)?.unreadCount).toBe(0);
+  } finally {
+    alicePage.off('request', recordRead);
+    await alicePage.evaluate(() => {
+      Reflect.deleteProperty(document, 'hidden');
+      Reflect.deleteProperty(document, 'visibilityState');
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+  }
+});
+
 test('CSP allows the theme, shell spacing, and mobile messenger styles after reload', async () => {
   const chatURL = alicePage.url();
   const styleViolations: string[] = [];
