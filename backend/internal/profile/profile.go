@@ -412,6 +412,8 @@ func writeImageError(log *slog.Logger, w http.ResponseWriter, err error) {
 		httpx.WriteError(w, http.StatusBadRequest, "too_large", "Image must be 10MB or smaller.")
 	case errors.Is(err, upload.ErrDimensions):
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_image", "That image is too big. Use one under 8000 pixels.")
+	case errors.Is(err, upload.ErrInvalidImage):
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_image", "That image could not be read. Try another image.")
 	case errors.Is(err, upload.ErrUnsupportedType), errors.Is(err, upload.ErrEmpty):
 		httpx.WriteError(w, http.StatusBadRequest, "unsupported_type", "Use a JPEG, PNG, GIF, or WebP image.")
 	default:
