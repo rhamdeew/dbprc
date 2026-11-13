@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 
 const mockOrigin = process.env.E2E_MOCK_ORIGIN ?? 'http://127.0.0.1:9999';
@@ -84,6 +85,25 @@ test.afterAll(async () => {
   await api?.dispose();
   await aliceContext?.close();
   await bobContext?.close();
+});
+
+test('truncated PNGs show a friendly validation error before and after reload', async () => {
+  const buffer = readFileSync(path.join(process.cwd(), 'fixtures', 'photo.png')).subarray(0, 24);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await alicePage.reload();
+    await expect(alicePage.getByRole('heading', { name: 'Photos (0/5)' })).toBeVisible();
+    const uploaded = alicePage.waitForResponse((response) =>
+      response.url().endsWith('/api/me/photos') && response.request().method() === 'POST');
+    await alicePage.getByLabel('Add a photo').setInputFiles({ name: 'truncated.png', mimeType: 'image/png', buffer });
+    const response = await uploaded;
+    expect(response.status()).toBe(400);
+    expect(await response.json()).toEqual({
+      code: 'invalid_image', message: 'That image could not be read. Try another image.',
+    });
+    await expect(alicePage.getByRole('alert')).toContainText('That image could not be read. Try another image.');
+    await expect(alicePage.getByRole('heading', { name: 'Photos (0/5)' })).toBeVisible();
+    await expect(alicePage.getByRole('button', { name: /Open photo/ })).toHaveCount(0);
+  }
 });
 
 test('Alice edits an interest, uploads a photo, and opens the lightbox', async () => {

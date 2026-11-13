@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"hash/crc32"
 	"image"
 	"image/jpeg"
@@ -11,6 +12,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -24,6 +26,41 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/testutil"
 	"github.com/rhamdeew/dbprc/backend/internal/upload"
 )
+
+func TestTruncatedPNGUpload(t *testing.T) {
+	fixture, err := os.ReadFile("../../../e2e/fixtures/photo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture) < 24 {
+		t.Fatal("photo fixture is shorter than 24 bytes")
+	}
+	for _, endpoint := range []string{"photos", "avatar"} {
+		t.Run(endpoint, func(t *testing.T) {
+			srv, dir := newProfileServer(t)
+			database := testutil.Database(t, srv)
+			user := testutil.CreateUser(t, database)
+			client := testutil.LoginAs(t, srv, user)
+			for attempt := 0; attempt < 2; attempt++ {
+				res := postFile(t, client, srv.URL+"/api/me/"+endpoint, "truncated.png", fixture[:24])
+				assertAPIError(t, res, http.StatusBadRequest, "invalid_image", "That image could not be read. Try another image.")
+				if n := photoCount(t, database, user.ID); n != 0 {
+					t.Fatalf("rejected upload left %d photos", n)
+				}
+				if row := loadUser(t, database, user.ID); row.avatar != nil {
+					t.Fatal("rejected upload changed avatar")
+				}
+				if files := fileSet(t, dir); len(files) != 0 {
+					t.Fatalf("rejected upload left files: %v", files)
+				}
+				status, profile, _ := getProfile(t, client, srv.URL+"/api/users/"+itoa(user.ID))
+				if status != http.StatusOK || len(profile.Photos) != 0 {
+					t.Fatalf("reload after rejection: %d %+v", status, profile)
+				}
+			}
+		})
+	}
+}
 
 func TestGetProfile(t *testing.T) {
 	srv, dir := newProfileServer(t)
@@ -574,7 +611,13 @@ func postFile(t *testing.T, client *http.Client, url, filename string, body []by
 func fileRequest(url, filename string, body []byte) (*http.Request, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
-	part, err := w.CreateFormFile("file", filename)
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, filename))
+	header.Set("Content-Type", "application/octet-stream")
+	if strings.HasSuffix(filename, ".png") {
+		header.Set("Content-Type", "image/png")
+	}
+	part, err := w.CreatePart(header)
 	if err != nil {
 		return nil, err
 	}

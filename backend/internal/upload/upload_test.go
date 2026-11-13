@@ -45,7 +45,6 @@ func TestSave(t *testing.T) {
 		kind    Kind
 		body    []byte
 		wantErr error
-		anyErr  bool
 		check   func(t *testing.T, rel string, data []byte)
 	}{
 		{
@@ -218,10 +217,22 @@ func TestSave(t *testing.T) {
 			},
 		},
 		{
-			name:   "truncated jpeg",
-			kind:   Photo,
-			body:   []byte{0xff, 0xd8, 0xff, 0xd9},
-			anyErr: true,
+			name:    "truncated jpeg",
+			kind:    Photo,
+			body:    []byte{0xff, 0xd8, 0xff, 0xd9},
+			wantErr: ErrInvalidImage,
+		},
+		{
+			name:    "truncated png header",
+			kind:    Photo,
+			body:    pngOf(t, small)[:24],
+			wantErr: ErrInvalidImage,
+		},
+		{
+			name:    "truncated png bitmap",
+			kind:    Photo,
+			body:    pngOf(t, small)[:33],
+			wantErr: ErrInvalidImage,
 		},
 		{
 			name:    "invalid kind",
@@ -244,13 +255,6 @@ func TestSave(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			st := New(t.TempDir())
 			rel, err := st.Save(context.Background(), bytes.NewReader(tt.body), tt.kind)
-			if tt.anyErr {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-				assertNoFiles(t, st.Dir)
-				return
-			}
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("got %v, want %v", err, tt.wantErr)

@@ -227,6 +227,27 @@ describe('profile page', () => {
     expect(screen.queryByRole('img', { name: 'Ada Lovelace, profile photo' })).not.toBeInTheDocument();
   });
 
+  it('shows a friendly invalid-image error without adding a photo', async () => {
+    const user = userEvent.setup();
+    mockProfile(profileFor(member));
+    server.use(
+      http.post('/api/me/photos', () => HttpResponse.json(
+        { code: 'invalid_image', message: 'That image could not be read. Try another image.' },
+        { status: 400 },
+      )),
+    );
+    renderProfile('7');
+
+    expect(await screen.findByRole('button', { name: 'Add photo' })).toBeInTheDocument();
+    await user.upload(fileInput('Add a photo'), imageFile('truncated.png'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('That image could not be read. Try another image.');
+    expect(screen.getByRole('heading', { name: 'Photos (0/5)' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open photo/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar', { name: 'Photo upload' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add photo' })).toBeEnabled();
+  });
+
   it('adds a photo and deletes it after confirm', async () => {
     const user = userEvent.setup();
     mockProfile(profileFor(member, { photos: [{ id: 3, url: '/uploads/photos/3.png' }] }));
