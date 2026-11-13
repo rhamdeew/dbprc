@@ -60,7 +60,7 @@ export function InformationBox({ profile }: InformationBoxProps) {
               <Text fw={700} w={64} style={{ flexShrink: 0 }}>
                 {field.label}
               </Text>
-              <Text style={{ flex: 1 }} c={value === '' ? 'dimmed' : undefined}>
+              <Text style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }} c={value === '' ? 'dimmed' : undefined}>
                 {value === '' ? 'Not set' : value}
               </Text>
               {profile.isMe ? (
