@@ -38,8 +38,18 @@ wait_for() { # <tag>
 
 # Prod takes a fresh snapshot before any running service or active config is changed.
 # --env-file supplies the incoming credentials; backup has no env_file dependency.
+#
+# The first release has nothing to snapshot: the data volume is there and readable,
+# but the API has never created arc.db. Only that exact case skips the snapshot.
+# Anything else (an unreadable volume, a probe that cannot run) falls through to
+# backup.sh, which then fails and stops the deploy as before.
+no_database_yet() {
+  compose .env.new run --rm -T backup sh -c 'ls -A /data >/dev/null && [ ! -e /data/arc.db ]'
+}
 if grep -qx "APP_ENV='prod'" .env.new && grep -qx "COMPOSE_PROFILES='backup'" .env.new; then
-  if ! compose .env.new run --rm -T backup backup.sh; then
+  if no_database_yet; then
+    echo "no database yet (first release): skipping the pre-deploy backup"
+  elif ! compose .env.new run --rm -T backup backup.sh; then
     echo "pre-deploy backup failed, nothing changed" >&2
     rm -f .env.new
     exit 1
