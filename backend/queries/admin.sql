@@ -57,11 +57,17 @@ FROM photos
 WHERE user_id = ?;
 
 -- name: ListDrawingPathsByUser :many
-SELECT drawing_path
-FROM wall_posts
-WHERE drawing_path IS NOT NULL
-  AND drawing_path != ''
-  AND (wall_owner_id = sqlc.arg('user_id') OR author_id = sqlc.arg('user_id'));
+SELECT p.drawing_path
+FROM wall_posts p
+WHERE p.drawing_path IS NOT NULL
+  AND p.drawing_path != ''
+  AND (
+    p.wall_owner_id = sqlc.arg('user_id')
+    OR p.author_id = sqlc.arg('user_id')
+    -- Replies other people wrote under this user's posts on a third wall.
+    -- The delete cascades to those rows through parent_id.
+    OR p.parent_id IN (SELECT r.id FROM wall_posts r WHERE r.author_id = sqlc.arg('user_id'))
+  );
 
 -- name: ListSessionRows :many
 SELECT token, data

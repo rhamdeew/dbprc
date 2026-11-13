@@ -1,13 +1,15 @@
-import { AppShell, Box, Flex, UnstyledButton } from '@mantine/core';
+import { AppShell, Badge, Box, Flex, Group, UnstyledButton } from '@mantine/core';
 import { NavLink, Outlet } from 'react-router';
 import { useLogout } from '../api/auth';
+import { useUnreadTotal } from '../api/chat';
 import { useMe } from '../api/me';
-import { CONTENT_WIDTH, HEADER, PANEL } from '../theme/theme';
+import { CONTENT_WIDTH, HEADER, PAGE } from '../theme/theme';
+import { LiveChats } from './LiveChats';
 import { SearchSlot } from './SearchSlot';
 
 const linkStyle = ({ isActive }: { isActive: boolean }) => ({
   color: '#ffffff',
-  fontWeight: isActive ? 700 : 400,
+  fontWeight: 700,
   textDecoration: isActive ? 'underline' : 'none',
   fontSize: 12,
   whiteSpace: 'nowrap' as const,
@@ -26,7 +28,7 @@ function LogOutButton() {
   return (
     <UnstyledButton
       type="button"
-      fw={600}
+      fw={700}
       fz={12}
       style={{ color: '#ffffff', whiteSpace: 'nowrap' }}
       onClick={() => logout.mutate()}
@@ -38,13 +40,14 @@ function LogOutButton() {
 
 export function Shell() {
   const { data: me } = useMe();
+  const unread = useUnreadTotal();
 
   return (
     <AppShell header={{ height: { base: 84, sm: 42 } }} padding={0} withBorder={false} offsetScrollbars={false}>
       <AppShell.Header
         style={{
           backgroundColor: HEADER,
-          borderBottom: '1px solid #2f4779',
+          borderBottom: '1px solid #133783',
           boxShadow: 'none',
         }}
       >
@@ -55,8 +58,14 @@ export function Shell() {
           maw={CONTENT_WIDTH} mx="auto" w="100%"
         >
           <Flex align="center" gap={{ base: 6, sm: 'md' }} justify="space-between" wrap="nowrap">
-            <NavLink to="/" end style={{ color: '#ffffff', fontWeight: 700, fontSize: 18, textDecoration: 'none' }}>
-              ARC
+            {/* The wordmark is drawn as "[arc]"; assistive tech reads the product name. */}
+            <NavLink
+              to="/"
+              end
+              aria-label="ARC"
+              style={{ color: '#ffffff', fontWeight: 700, fontSize: 22, lineHeight: 1, letterSpacing: -1, textDecoration: 'none' }}
+            >
+              [arc]
             </NavLink>
             <Flex align="center" component="nav" aria-label="Primary" gap={{ base: 6, sm: 'md' }} wrap="nowrap">
               {me ? (
@@ -64,7 +73,15 @@ export function Shell() {
                   My profile
                 </TopLink>
               ) : null}
-              <TopLink to="/messenger">Messenger</TopLink>
+              <Group gap={4} wrap="nowrap">
+                <TopLink to="/messenger">Messenger</TopLink>
+                {/* A sibling, not a child: the link keeps the plain name "Messenger". */}
+                {unread > 0 ? (
+                  <Badge size="xs" color="red" variant="filled" radius="xl" aria-label={`${unread} unread messages`}>
+                    {unread}
+                  </Badge>
+                ) : null}
+              </Group>
               {me?.isAdmin ? (
                 <TopLink to="/admin" end>
                   Admin
@@ -76,7 +93,8 @@ export function Shell() {
           <SearchSlot />
         </Flex>
       </AppShell.Header>
-      <AppShell.Main style={{ backgroundColor: PANEL, minHeight: '100vh' }}>
+      <LiveChats />
+      <AppShell.Main style={{ backgroundColor: PAGE, minHeight: '100vh' }}>
         <Box data-testid="content" mx="auto" w="100%" px="md" py="md" style={{ maxWidth: CONTENT_WIDTH }}>
           <Outlet />
         </Box>

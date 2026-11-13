@@ -1,12 +1,15 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rhamdeew/dbprc/backend/internal/config"
@@ -121,5 +124,60 @@ func TestPostWithoutOriginIsCSRF(t *testing.T) {
 	}
 	if body["code"] != "csrf" {
 		t.Fatalf("body %v", body)
+	}
+}
+
+func TestRecoverPanics(t *testing.T) {
+	var logs bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logs, nil))
+	handler := recoverPanics(log, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("boom")
+	}))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/me", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["code"] != "internal" || body["message"] != "Something went wrong." {
+		t.Fatalf("body %v", body)
+	}
+	if out := logs.String(); !strings.Contains(out, "panic") || !strings.Contains(out, "boom") || !strings.Contains(out, "/api/me") {
+		t.Fatalf("log %q", out)
+	}
+}
+
+func TestRecoverPanicsKeepsAbortHandler(t *testing.T) {
+	handler := recoverPanics(slog.New(slog.DiscardHandler), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic(http.ErrAbortHandler)
+	}))
+	defer func() {
+		v := recover()
+		err, ok := v.(error)
+		if !ok || !errors.Is(err, http.ErrAbortHandler) {
+			t.Fatalf("recovered %v", v)
+		}
+	}()
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	t.Fatal("abort was swallowed")
+}
+
+func TestRequestLogHasDuration(t *testing.T) {
+	var logs bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logs, nil))
+	handler := logRequests(log, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/version", nil))
+	if out := logs.String(); !strings.Contains(out, "status=418") || !strings.Contains(out, "ms=") {
+		t.Fatalf("log %q", out)
+	}
+	logs.Reset()
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if logs.Len() != 0 {
+		t.Fatalf("healthz logged: %q", logs.String())
 	}
 }

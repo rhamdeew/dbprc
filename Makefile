@@ -60,10 +60,11 @@ build: ensure-go ensure-node-modules
 e2e: ensure-go ensure-node-modules ## Playwright: build the frontend, mockoidc + api, no Docker
 	bash scripts/e2e.sh
 
-dev: ensure-go ensure-node-modules ## mockoidc :9999 + api :8080 + vite :5173 (vite proxies /api, /auth, /ws)
+dev: ensure-go ensure-node-modules ## mockoidc :9999 + api :8080 + vite :5173 (vite proxies /api, /auth, /ws and serves /uploads)
 	@trap 'kill 0' EXIT; \
 	set -a; . ./.env.dev.example; set +a; \
-	(cd backend && go run ./cmd/mockoidc) & \
+	echo "ARC dev: open http://localhost:5173. Mock Google asks who to sign in as: any @$$ALLOWED_DOMAIN email works, $$ADMIN_EMAILS is the admin. Use a private window for a second person."; \
+	(cd backend && go run ./cmd/mockoidc -interactive) & \
 	(cd backend && APP_ENV=dev go run ./cmd/arc) & \
 	(cd frontend && npm run dev) & \
 	wait

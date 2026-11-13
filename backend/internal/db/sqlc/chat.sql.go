@@ -35,6 +35,21 @@ func (q *Queries) AdvanceChatRead(ctx context.Context, arg AdvanceChatReadParams
 	return last_read_message_id, err
 }
 
+const countAvailableOthers = `-- name: CountAvailableOthers :one
+SELECT count(*)
+FROM users
+WHERE available != 0
+  AND id != ?
+`
+
+// Everyone except me who can be matched right now.
+func (q *Queries) CountAvailableOthers(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAvailableOthers, id)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getChatByID = `-- name: GetChatByID :one
 SELECT id, user_low, user_high, created_at, last_message_at
 FROM chats

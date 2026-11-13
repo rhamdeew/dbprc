@@ -44,40 +44,43 @@ export function WallComposer({ userId, parentId, onPosted }: WallComposerProps) 
     <form aria-label={reply ? 'Reply composer' : 'Wall composer'} onSubmit={onSubmit}>
       <Stack gap="xs">
         <Textarea
-          label={reply ? 'Write a reply' : 'Write on this wall'}
+          aria-label={reply ? 'Write a reply' : 'Write on this wall'}
+          placeholder={reply ? 'Write a reply…' : 'Write something…'}
           value={text}
           onChange={(event) => setText(event.currentTarget.value)}
           maxLength={2000}
-          rows={reply ? 2 : 3}
-        />
-        <Checkbox
-          label="Draw"
-          checked={draw}
-          onChange={(event) => {
-            const next = event.currentTarget.checked;
-            setDraw(next);
-            if (!next) setDrawing(null);
-          }}
+          rows={reply ? 1 : 2}
         />
         {draw ? (
           <Box style={{ maxWidth: '100%', overflowX: 'auto' }}>
             <DrawingPad onChange={setDrawing} />
           </Box>
         ) : null}
-        <Checkbox
-          label="Post anonymously"
-          checked={anonymous}
-          aria-describedby={hintId}
-          onChange={(event) => setAnonymous(event.currentTarget.checked)}
-        />
-        <Text id={hintId} size="xs" c="dimmed">
-          {anonymousHint}
-        </Text>
-        <Group justify="flex-end">
+        <Group justify="space-between" gap="sm">
+          <Group gap="md">
+            <Checkbox
+              label="Draw"
+              checked={draw}
+              onChange={(event) => {
+                const next = event.currentTarget.checked;
+                setDraw(next);
+                if (!next) setDrawing(null);
+              }}
+            />
+            <Checkbox
+              label="Post anonymously"
+              checked={anonymous}
+              aria-describedby={hintId}
+              onChange={(event) => setAnonymous(event.currentTarget.checked)}
+            />
+          </Group>
           <Button type="submit" loading={create.isPending} disabled={!canPost}>
             Post
           </Button>
         </Group>
+        <Text id={hintId} size="xs" c="dimmed">
+          {anonymousHint}
+        </Text>
       </Stack>
     </form>
   );

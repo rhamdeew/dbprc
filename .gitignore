@@ -7,3 +7,4 @@ backend/bin/
 backend/coverage.out
 *.db
 *.db-*
+backend/uploads/

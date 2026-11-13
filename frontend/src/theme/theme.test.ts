@@ -18,15 +18,16 @@ describe('2006 theme', () => {
     expect(theme.radius).toMatchObject({ xs: '2px', sm: '2px', md: '2px', lg: '2px', xl: '2px' });
     expect(theme.shadows).toEqual({ xs: 'none', sm: 'none', md: 'none', lg: 'none', xl: 'none' });
     expect(theme.components?.Paper?.defaultProps?.shadow).toBe('none');
+    expect(theme.components?.Button?.defaultProps?.size).toBe('xs');
   });
 
-  it('paints the page panel and default border', () => {
+  it('paints a white page and the default border', () => {
     const vars = cssVariablesResolver({} as never);
     expect(vars.variables['--arc-panel']).toBe('#edeff4');
     expect(vars.variables['--arc-border']).toBe('#d8dfea');
     expect(vars.variables['--arc-header']).toBe('#3b5998');
-    expect(vars.light['--mantine-color-body']).toBe('#edeff4');
+    expect(vars.light['--mantine-color-body']).toBe('#ffffff');
     expect(vars.light['--mantine-color-default-border']).toBe('#d8dfea');
-    expect(vars.dark['--mantine-color-body']).toBe('#edeff4');
+    expect(vars.dark['--mantine-color-body']).toBe('#ffffff');
   });
 });

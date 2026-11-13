@@ -1,7 +1,8 @@
-import { Button, Group, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Button, Group, Stack, Text, TextInput } from '@mantine/core';
 import { useState } from 'react';
 import { interestFields, useSaveInterests, type InterestKey, type Profile } from '../../api/profile';
 import { Panel } from '../../components/Panel';
+import { HEADER } from '../../theme/theme';
 
 type InformationBoxProps = {
   profile: Profile;
@@ -30,9 +31,8 @@ export function InformationBox({ profile }: InformationBoxProps) {
   }
 
   return (
-    <Panel>
-      <Stack gap="sm">
-        <Title order={2}>Information</Title>
+    <Panel title="Information">
+      <Stack gap={6}>
         {interestFields.map((field) => {
           const value = profile.interests[field.key];
           if (editing === field.key) {
@@ -44,10 +44,10 @@ export function InformationBox({ profile }: InformationBoxProps) {
                   onChange={(event) => setDraft(Array.from(event.currentTarget.value).slice(0, 500).join(''))}
                 />
                 <Group gap="xs">
-                  <Button type="button" size="compact-sm" loading={save.isPending} onClick={submit}>
+                  <Button type="button" size="compact-xs" loading={save.isPending} onClick={submit}>
                     Save
                   </Button>
-                  <Button type="button" size="compact-sm" variant="default" disabled={save.isPending} onClick={cancel}>
+                  <Button type="button" size="compact-xs" variant="default" disabled={save.isPending} onClick={cancel}>
                     Cancel
                   </Button>
                 </Group>
@@ -55,15 +55,15 @@ export function InformationBox({ profile }: InformationBoxProps) {
             );
           }
           return (
-            <Group key={field.key} justify="space-between" wrap="nowrap" gap="sm">
-              <Text fw={700} w={64} style={{ flexShrink: 0 }}>
-                {field.label}
+            <Group key={field.key} justify="space-between" wrap="nowrap" gap="sm" align="flex-start">
+              <Text fw={700} c="dimmed" w={64} style={{ flexShrink: 0 }}>
+                {field.label}:
               </Text>
               <Text style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }} c={value === '' ? 'dimmed' : undefined}>
                 {value === '' ? 'Not set' : value}
               </Text>
               {profile.isMe ? (
-                <Button type="button" variant="subtle" size="compact-sm" aria-label={`Edit ${field.label}`} onClick={() => start(field.key)}>
+                <Button type="button" variant="subtle" size="compact-xs" c={HEADER} aria-label={`Edit ${field.label}`} onClick={() => start(field.key)}>
                   Edit
                 </Button>
               ) : null}

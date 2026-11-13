@@ -13,7 +13,8 @@ function EnableNotificationsPrompt() {
   return (
     <Button
       type="button"
-      variant="default"
+      variant="subtle"
+      size="compact-xs"
       onClick={() => {
         void Notification.requestPermission().then(setPermission);
       }}

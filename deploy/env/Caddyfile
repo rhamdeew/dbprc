@@ -8,13 +8,18 @@
 :8080 {
 	encode zstd gzip
 
-	@protected not path /healthz
+	# /healthz stays open for the deploy smoke test and uptime monitors.
+	# /ws is open too: browsers do not reliably send Basic Auth on a WebSocket
+	# handshake (Safari does not). The API still refuses the upgrade without a
+	# session cookie, which is only handed out behind Basic Auth on /auth/*,
+	# and without the app's own Origin.
+	@protected not path /healthz /ws
 	basic_auth @protected {
 		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
 	}
 
 	header {
-		Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://{host}; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://{host}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy same-origin

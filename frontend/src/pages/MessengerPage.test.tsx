@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { messagePageSize, type ChatMessage, type ChatSummary } from '../api/chat';
 import { reconnectClock } from '../api/realtime';
+import { LiveChats } from '../components/LiveChats';
 import { member } from '../test/fixtures';
 import { render } from '../test/render';
 import { chatSocket, server } from '../test/server';
@@ -35,11 +36,26 @@ function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <LocationEcho />
+      {/* In the app the shell mounts this: the socket, the tab title, and notifications. */}
+      <LiveChats />
       <Routes>
         <Route path="/messenger/:chatId?" element={<MessengerPage />} />
       </Routes>
     </MemoryRouter>,
   );
+}
+
+// The thread header also links the partner's name (to their profile), so chat rows are looked up inside the list.
+function chatNav() {
+  return within(screen.getByRole('navigation', { name: 'Chats' }));
+}
+
+function chatRow(name: RegExp) {
+  return chatNav().getByRole('link', { name });
+}
+
+async function findChatRow(name: RegExp) {
+  return within(await screen.findByRole('navigation', { name: 'Chats' })).findByRole('link', { name });
 }
 
 const clients: { send: (data: string) => void; close: () => void }[] = [];
@@ -120,7 +136,7 @@ describe('messenger', () => {
 
     expect(await screen.findByRole('heading', { name: 'Katherine Johnson' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/messenger/9');
-    expect(screen.getByRole('link', { name: /Katherine Johnson/ })).toBeInTheDocument();
+    expect(chatRow(/Katherine Johnson/)).toBeInTheDocument();
     expect(document.querySelector('img')).toHaveAttribute('src', '/uploads/avatars/kj.png');
     expect(await screen.findByText('No messages yet.')).toBeInTheDocument();
   });
@@ -198,6 +214,104 @@ describe('messenger', () => {
     expect(screen.getByRole('switch', { name: 'Available for random chats' })).not.toBeChecked();
   });
 
+  it.each([
+    [11, true, true],
+    [10, true, false],
+    [25, false, false],
+  ])('with %i others available and me available=%s, the count line shown is %s', async (count, available, shown) => {
+    let asked = false;
+    server.use(
+      http.get('/api/me', () => HttpResponse.json({ ...member, available })),
+      http.get('/api/chats/available', () => {
+        asked = true;
+        return HttpResponse.json({ count });
+      }),
+    );
+    renderAt('/messenger');
+
+    const toggle = await screen.findByRole('switch', { name: 'Available for random chats' });
+    await waitFor(() => expect(toggle).toBeEnabled());
+    await waitFor(() => expect(asked).toBe(true));
+    if (shown) {
+      const line = await screen.findByText(/colleagues are available right now/);
+      expect(line).toHaveTextContent(`${count} colleagues are available right now`);
+    } else {
+      // Let the response land before asserting that nothing appeared.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(screen.queryByText(/colleagues are available right now/)).not.toBeInTheDocument();
+    }
+  });
+
+  it('hides the count line when the count request fails', async () => {
+    let asked = false;
+    server.use(
+      http.get('/api/chats/available', () => {
+        asked = true;
+        return HttpResponse.json({ code: 'internal', message: 'Something went wrong.' }, { status: 500 });
+      }),
+    );
+    renderAt('/messenger');
+
+    await waitFor(() => expect(asked).toBe(true));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(screen.queryByText(/colleagues are available right now/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('links the thread header to the partner, separates days, and dims an undecryptable line', async () => {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+    const today = new Date().toISOString();
+    server.use(
+      http.get('/api/chats', () => HttpResponse.json([chat(5, 'Grace Hopper', 0, 'hi')])),
+      http.get('/api/chats/:id/messages', () =>
+        HttpResponse.json({
+          messages: [
+            { ...line(1, '[message unavailable]'), createdAt: yesterday },
+            { ...line(2, 'hi'), createdAt: today },
+          ],
+        }),
+      ),
+    );
+    renderAt('/messenger/5');
+
+    const heading = await screen.findByRole('heading', { level: 2, name: 'Grace Hopper' });
+    expect(within(heading).getByRole('link', { name: 'Grace Hopper' })).toHaveAttribute('href', '/u/105');
+    const log = await screen.findByRole('log', { name: 'Messages' });
+    const broken = await within(log).findByText('Message unavailable');
+    expect(broken).toHaveStyle({ fontStyle: 'italic' });
+    expect(within(log).queryByText('[message unavailable]')).not.toBeInTheDocument();
+    const days = Array.from(log.querySelectorAll('[data-kind="day"]')).map((node) => node.textContent);
+    expect(days).toEqual(['Yesterday', 'Today']);
+  });
+
+  it('marks a message as sending until the server confirms it', async () => {
+    const user = userEvent.setup();
+    let release: (response: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.get('/api/chats', () => HttpResponse.json([chat(5, 'Grace Hopper', 0, null)])),
+      http.post('/api/chats/:id/messages', () => pending),
+    );
+    renderAt('/messenger/5');
+    const box = await screen.findByRole('textbox', { name: 'Message' });
+    await user.type(box, 'on its way');
+    await user.keyboard('{Enter}');
+
+    const log = screen.getByRole('log', { name: 'Messages' });
+    expect(await within(log).findByText('sending…')).toBeInTheDocument();
+    await act(async () => {
+      release(HttpResponse.json(line(9, 'on its way', member.id), { status: 201 }));
+    });
+    await waitFor(() => expect(within(log).queryByText('sending…')).not.toBeInTheDocument());
+    expect(within(log).getByText('on its way')).toBeInTheDocument();
+  });
+
   it('keeps a newline on Shift+Enter and sends the trimmed text on Enter', async () => {
     const user = userEvent.setup();
     const bodies: string[] = [];
@@ -250,7 +364,7 @@ describe('messenger', () => {
     const log = screen.getByRole('log', { name: 'Messages' });
     expect(within(log).getByText('Hello there')).toBeInTheDocument();
     expect(box).toHaveValue('');
-    expect(screen.getByRole('link', { name: /Grace Hopper/ })).toHaveTextContent('Hello there');
+    expect(chatRow(/Grace Hopper/)).toHaveTextContent('Hello there');
 
     await waitFor(() => expect(clients.length).toBeGreaterThan(0));
     act(() => {
@@ -360,7 +474,7 @@ describe('messenger', () => {
 
     const log = screen.getByRole('log', { name: 'Messages' });
     expect(await within(log).findByText('incoming hello')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Grace Hopper/ })).toHaveTextContent('incoming hello');
+    expect(chatRow(/Grace Hopper/)).toHaveTextContent('incoming hello');
     await waitFor(() => expect(reads).toContainEqual({ lastMessageId: 4 }));
     expect(screen.queryByLabelText(/unread/)).not.toBeInTheDocument();
 
@@ -371,7 +485,7 @@ describe('messenger', () => {
       });
     });
     expect(await screen.findByLabelText('1 unread')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Alan Turing/ })).toHaveTextContent('from alan');
+    expect(chatRow(/Alan Turing/)).toHaveTextContent('from alan');
     expect(within(log).queryByText('from alan')).not.toBeInTheDocument();
 
     act(() => {
@@ -381,7 +495,7 @@ describe('messenger', () => {
       });
     });
     expect(await screen.findByLabelText('1 unread')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Alan Turing/ })).toHaveTextContent('my other tab');
+    expect(chatRow(/Alan Turing/)).toHaveTextContent('my other tab');
 
     act(() => {
       push({
@@ -397,8 +511,8 @@ describe('messenger', () => {
         data: chat(11, 'Linus Torvalds', 0, null),
       });
     });
-    expect(await screen.findByRole('link', { name: /Linus Torvalds/ })).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: /Grace Hopper|Alan Turing|Linus Torvalds/ })).toHaveLength(3);
+    expect(await findChatRow(/Linus Torvalds/)).toBeInTheDocument();
+    expect(chatNav().getAllByRole('link', { name: /Grace Hopper|Alan Turing|Linus Torvalds/ })).toHaveLength(3);
   });
 
   it('keeps an open hidden thread unread and acknowledges the latest message on return', async () => {
@@ -589,7 +703,7 @@ describe('messenger', () => {
     const long = `${'a'.repeat(79)}😀tail`;
     server.use(http.get('/api/chats', () => HttpResponse.json([chat(5, 'Grace Hopper', 0, 'earlier')])));
     renderAt('/messenger');
-    expect(await screen.findByRole('link', { name: /Grace Hopper/ })).toBeInTheDocument();
+    expect(await findChatRow(/Grace Hopper/)).toBeInTheDocument();
     await waitFor(() => expect(clients.length).toBeGreaterThan(0));
     expect(requestPermission).not.toHaveBeenCalled();
 
@@ -623,7 +737,7 @@ describe('messenger', () => {
       push({ type: 'chat.new', data: chat(13, 'Edsger Dijkstra', 0, 'nope') });
     });
     expect(await screen.findByText('visible now')).toBeInTheDocument();
-    expect(await screen.findByRole('link', { name: /Edsger Dijkstra/ })).toBeInTheDocument();
+    expect(await findChatRow(/Edsger Dijkstra/)).toBeInTheDocument();
     expect(posted).toHaveLength(4);
     expect(requestPermission).not.toHaveBeenCalled();
 
@@ -653,7 +767,7 @@ describe('messenger', () => {
       push({ type: 'chat.new', data: chat(11, 'Linus Torvalds', 0, 'hey') });
     });
     expect(await screen.findByText('hi')).toBeInTheDocument();
-    expect(await screen.findByRole('link', { name: /Linus Torvalds/ })).toBeInTheDocument();
+    expect(await findChatRow(/Linus Torvalds/)).toBeInTheDocument();
     expect(posted).toHaveLength(0);
     expect(requestPermission).not.toHaveBeenCalled();
   });

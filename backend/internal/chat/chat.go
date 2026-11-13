@@ -72,6 +72,10 @@ type availabilityJSON struct {
 	Available bool `json:"available"`
 }
 
+type availableCountJSON struct {
+	Count int64 `json:"count"`
+}
+
 type partnerJSON struct {
 	ID        int64   `json:"id"`
 	Name      string  `json:"name"`
@@ -137,6 +141,7 @@ func Routes(mux *http.ServeMux, log *slog.Logger, sessions *session.Manager, dat
 	mux.Handle("PUT /api/me/availability", guard(httpx.LimitBody(httpx.JSONBodyLimit)(http.HandlerFunc(h.putAvailability))))
 	mux.Handle("POST /api/chats/random", guard(httpx.LimitBody(httpx.SmallBodyLimit)(httpx.RateLimit(randomLimit)(http.HandlerFunc(h.random)))))
 	mux.Handle("GET /api/chats", guard(http.HandlerFunc(h.list)))
+	mux.Handle("GET /api/chats/available", guard(http.HandlerFunc(h.availableCount)))
 	mux.Handle("GET /api/chats/{id}/messages", guard(http.HandlerFunc(h.listMessages)))
 	mux.Handle("POST /api/chats/{id}/messages", guard(httpx.LimitBody(httpx.JSONBodyLimit)(httpx.RateLimit(messageLimit)(http.HandlerFunc(h.postMessage)))))
 	mux.Handle("POST /api/chats/{id}/read", guard(httpx.LimitBody(httpx.JSONBodyLimit)(http.HandlerFunc(h.markRead))))
@@ -204,6 +209,23 @@ func (h *handlers) random(w http.ResponseWriter, r *http.Request) {
 		h.notifier.MessageCreated(*res.message, res.userIDs)
 	}
 	httpx.WriteJSON(w, http.StatusCreated, randomJSON{Chat: res.view, Rematch: res.rematch})
+}
+
+// availableCount is how many other people can be matched right now.
+// It is a number only: who they are is not exposed.
+func (h *handlers) availableCount(w http.ResponseWriter, r *http.Request) {
+	me, ok := httpx.UserFrom(r.Context())
+	if !ok {
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Sign in required.")
+		return
+	}
+	count, err := sqlc.New(h.db.Reader()).CountAvailableOthers(r.Context(), me.ID)
+	if err != nil {
+		h.log.Error("count available", "err", err, "user_id", me.ID)
+		httpx.WriteError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, availableCountJSON{Count: count})
 }
 
 func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
