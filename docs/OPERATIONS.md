@@ -57,7 +57,7 @@ Set these GitHub Environment secrets separately for staging and prod (never comm
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Per-bucket API token; rendered as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
 | `BACKUP_PING_URL` | Optional monitoring URL; success pings it, failure appends `/fail`; empty means no ping |
 
-Deploy renders `COMPOSE_PROFILES=backup` only when `RESTIC_REPOSITORY` is nonempty. Empty repository skips both cron and prod pre-deploy backup. The image is published with the same SHA as API/web. Never run scripts with shell tracing or print `.env`/Compose config containing secrets.
+Deploy renders `COMPOSE_PROFILES=backup` only when `RESTIC_REPOSITORY` is nonempty. Empty repository skips both cron and prod pre-deploy backup. The prod pre-deploy backup is also skipped on the first release, when the data volume is readable and has no `arc.db` yet (the deploy log says so); any other backup failure stops the deploy with nothing changed. The image is published with the same SHA as API/web. Never run scripts with shell tracing or print `.env`/Compose config containing secrets.
 
 From the environment user's `~/arc`:
 
