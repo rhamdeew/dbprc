@@ -1,8 +1,9 @@
-import { Center, Flex, Loader, Stack, Text, Title } from '@mantine/core';
+import { Box, Center, Flex, Loader, Stack, Text, Title } from '@mantine/core';
 import { useParams } from 'react-router';
 import { ApiError } from '../api/client';
 import { useProfile, type Profile } from '../api/profile';
 import { Panel } from '../components/Panel';
+import { BORDER } from '../theme/theme';
 import { AvatarColumn } from './profile/AvatarColumn';
 import { InformationBox } from './profile/InformationBox';
 import { PhotosBox } from './profile/PhotosBox';
@@ -21,7 +22,7 @@ function profileErrorMessage(error: unknown): string {
 
 function ProfileMissing({ message }: { message: string }) {
   return (
-    <Panel>
+    <Panel p="md">
       <Title order={1}>Profile</Title>
       <Text mt="xs">{message}</Text>
     </Panel>
@@ -30,17 +31,21 @@ function ProfileMissing({ message }: { message: string }) {
 
 function ProfileView({ profile }: { profile: Profile }) {
   return (
-    <Stack gap="md">
-      <Flex direction={{ base: 'column', sm: 'row' }} gap="md" align="flex-start">
-        <AvatarColumn profile={profile} />
-        <Stack gap="md" style={{ flex: 1, minWidth: 0 }} w="100%">
+    <Flex direction={{ base: 'column', sm: 'row' }} gap="md" align="flex-start">
+      <AvatarColumn profile={profile} />
+      <Stack gap="md" style={{ flex: 1, minWidth: 0 }} w="100%">
+        <Box pb={6} style={{ borderBottom: `1px solid ${BORDER}` }}>
           <Title order={1}>{profile.name}</Title>
-          <InformationBox profile={profile} />
-          <PhotosBox profile={profile} />
-        </Stack>
-      </Flex>
-      <WallSection userId={profile.id} />
-    </Stack>
+          <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+            {profile.email}
+            {profile.available ? '' : ' · not available for random chats'}
+          </Text>
+        </Box>
+        <InformationBox profile={profile} />
+        <PhotosBox profile={profile} />
+        <WallSection userId={profile.id} />
+      </Stack>
+    </Flex>
   );
 }
 

@@ -1,6 +1,6 @@
 import { Avatar, Stack } from '@mantine/core';
+import { BORDER } from '../../theme/theme';
 import { useUploadAvatar, type Profile } from '../../api/profile';
-import { Panel } from '../../components/Panel';
 import { FilePicker } from './FilePicker';
 import { UploadProgress } from './UploadProgress';
 
@@ -11,15 +11,15 @@ type AvatarColumnProps = {
 export function AvatarColumn({ profile }: AvatarColumnProps) {
   const { mutation, progress } = useUploadAvatar(profile.id);
   return (
-    <Panel w={{ base: '100%', sm: 220 }} style={{ flexShrink: 0 }}>
-      <Stack gap="xs" align="center">
+    <Stack gap={4} align="flex-start" w={{ base: '100%', sm: 200 }} style={{ flexShrink: 0 }}>
         <Avatar
           src={profile.avatarUrl}
           name={profile.name}
           alt={`${profile.name}, profile photo`}
-          size={180}
+          size={200}
           radius={2}
           color="arcBlue"
+          style={{ border: `1px solid ${BORDER}` }}
         />
         {profile.isMe ? (
           <FilePicker
@@ -30,7 +30,6 @@ export function AvatarColumn({ profile }: AvatarColumnProps) {
           />
         ) : null}
         <UploadProgress value={progress} label="Avatar upload" />
-      </Stack>
-    </Panel>
+    </Stack>
   );
 }

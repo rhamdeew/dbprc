@@ -51,6 +51,7 @@ type profileJSON struct {
 	Name      string        `json:"name"`
 	Email     string        `json:"email"`
 	AvatarURL *string       `json:"avatarUrl"`
+	Available bool          `json:"available"`
 	Interests interestsJSON `json:"interests"`
 	Photos    []photoJSON   `json:"photos"`
 	IsMe      bool          `json:"isMe"`
@@ -139,6 +140,7 @@ func (h *handlers) get(w http.ResponseWriter, r *http.Request) {
 		Name:      user.Name,
 		Email:     user.Email,
 		AvatarURL: avatarPointer(user.AvatarPath),
+		Available: user.Available != 0,
 		Interests: interests,
 		Photos:    photos,
 		IsMe:      me.ID == user.ID,

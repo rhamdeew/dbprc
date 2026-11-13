@@ -56,6 +56,7 @@ describe('profile page', () => {
     renderProfile(String(member.id));
 
     expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
+    expect(screen.getByText(member.email)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Change photo' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit Hobby' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit Music' })).toBeInTheDocument();
@@ -85,6 +86,15 @@ describe('profile page', () => {
     expect(screen.queryByRole('button', { name: 'Add photo' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /delete photo/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/start chat/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/not available for random chats/)).not.toBeInTheDocument();
+  });
+
+  it('says when a colleague is out of the random-chat pool', async () => {
+    mockProfile({ ...colleague, available: false });
+    renderProfile('9');
+
+    expect(await screen.findByRole('heading', { name: 'Alan Turing' })).toBeInTheDocument();
+    expect(screen.getByText(`${colleague.email} · not available for random chats`)).toBeInTheDocument();
   });
 
   it('saves one interest and keeps the other fields', async () => {

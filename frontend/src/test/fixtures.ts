@@ -25,6 +25,7 @@ export function profileFor(person: Me, overrides: Partial<Profile> = {}): Profil
     name: person.name,
     email: person.email,
     avatarUrl: person.avatarUrl,
+    available: person.available,
     photos: [],
     isMe: true,
     ...rest,

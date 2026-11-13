@@ -21,6 +21,14 @@ Object.defineProperty(window, 'matchMedia', {
   }),
 });
 
+// An autosizing textarea listens for font loads. jsdom has no `document.fonts`.
+if (!('fonts' in document)) {
+  Object.defineProperty(document, 'fonts', {
+    configurable: true,
+    value: { addEventListener: () => {}, removeEventListener: () => {} },
+  });
+}
+
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 
 afterEach(() => {

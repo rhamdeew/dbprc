@@ -4,6 +4,13 @@ SET available = ?
 WHERE id = ?
 RETURNING available;
 
+-- name: CountAvailableOthers :one
+-- Everyone except me who can be matched right now.
+SELECT count(*)
+FROM users
+WHERE available != 0
+  AND id != ?;
+
 -- name: ListFreshPartnerIDs :many
 -- Available users with no chat against me. The caller picks one at random.
 SELECT u.id

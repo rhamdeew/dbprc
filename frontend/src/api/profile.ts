@@ -21,6 +21,8 @@ export type Profile = {
   name: string;
   email: string;
   avatarUrl: string | null;
+  /** In the random-chat pool. */
+  available: boolean;
   interests: Interests;
   photos: ProfilePhoto[];
   isMe: boolean;

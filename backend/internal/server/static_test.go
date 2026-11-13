@@ -105,7 +105,7 @@ func TestDevStatic(t *testing.T) {
 				tt.path != "/healthz" && !strings.HasPrefix(tt.path, "/api/")
 			if served {
 				csp := resp.Header.Get("Content-Security-Policy")
-				wantCSP := "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://" + req.Host + "; frame-ancestors 'none'"
+				wantCSP := "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://" + req.Host + "; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 				if csp != wantCSP {
 					t.Fatalf("csp %q, want %q", csp, wantCSP)
 				}

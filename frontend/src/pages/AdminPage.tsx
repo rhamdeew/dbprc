@@ -23,6 +23,7 @@ import {
 import { ApiError } from '../api/client';
 import { useMe } from '../api/me';
 import { Panel } from '../components/Panel';
+import { BORDER, PANEL } from '../theme/theme';
 import { NotFoundPage } from './NotFoundPage';
 
 const statFields: { key: keyof AdminStats; label: string }[] = [
@@ -49,15 +50,21 @@ function errorMessage(error: unknown, fallback: string): string {
 
 function StatCards({ stats }: { stats: AdminStats }) {
   return (
-    <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="sm">
+    <SimpleGrid cols={{ base: 2, sm: 6 }} spacing="sm">
       {statFields.map((field) => (
-        <Box key={field.key} role="group" aria-label={field.label}>
-          <Panel p="sm">
-            <Text fw={700} fz={18}>
-              {stats[field.key]}
-            </Text>
-            <Text>{field.label}</Text>
-          </Panel>
+        <Box
+          key={field.key}
+          role="group"
+          aria-label={field.label}
+          p="sm"
+          style={{ background: PANEL, border: `1px solid ${BORDER}` }}
+        >
+          <Text size="xs" c="dimmed">
+            {field.label}
+          </Text>
+          <Text fw={700} fz={16}>
+            {stats[field.key]}
+          </Text>
         </Box>
       ))}
     </SimpleGrid>
@@ -152,9 +159,8 @@ function RemoveProfile() {
 
   return (
     <Box component="section" aria-label="Remove profile">
-      <Panel>
+      <Panel title="Remove profile">
         <Stack gap="sm">
-          <Title order={2}>Remove profile</Title>
           <Text>Deletes that profile, their posts, and their chats. This cannot be undone.</Text>
           <form onSubmit={onPreview} noValidate>
             <Stack gap="xs">

@@ -56,7 +56,7 @@ func setSecurityHeaders(w http.ResponseWriter, r *http.Request) {
 	if host != "" && !strings.ContainsAny(host, " ;\t\"'\\") {
 		csp += " wss://" + host
 	}
-	csp += "; frame-ancestors 'none'"
+	csp += "; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 	w.Header().Set("Content-Security-Policy", csp)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "same-origin")

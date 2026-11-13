@@ -76,6 +76,13 @@ func TestGetProfile(t *testing.T) {
 	if body.ID != me.ID || body.Name != "Ada" || body.Email != "ada@example.com" || !body.IsMe || body.AvatarURL != nil {
 		t.Fatalf("self %+v", body)
 	}
+	if !body.Available {
+		t.Fatalf("a new user is available: %+v", body)
+	}
+	away := testutil.CreateUser(t, database, testutil.WithName("Cy"), testutil.WithAvailable(false))
+	if _, awayBody, _ := getProfile(t, client, srv.URL+"/api/users/"+itoa(away.ID)); awayBody.Available || awayBody.IsMe {
+		t.Fatalf("unavailable colleague %+v", awayBody)
+	}
 	if body.Interests != (interestsBody{}) || len(body.Photos) != 0 {
 		t.Fatalf("empty profile %+v", body)
 	}
@@ -522,6 +529,7 @@ type profileBody struct {
 	Name      string        `json:"name"`
 	Email     string        `json:"email"`
 	AvatarURL *string       `json:"avatarUrl"`
+	Available bool          `json:"available"`
 	Interests interestsBody `json:"interests"`
 	Photos    []photoBody   `json:"photos"`
 	IsMe      bool          `json:"isMe"`
@@ -767,12 +775,12 @@ func assertNoContent(t *testing.T, res *http.Response) {
 
 func assertProfileKeys(t *testing.T, raw map[string]any) {
 	t.Helper()
-	for _, key := range []string{"id", "name", "email", "avatarUrl", "interests", "photos", "isMe"} {
+	for _, key := range []string{"id", "name", "email", "avatarUrl", "available", "interests", "photos", "isMe"} {
 		if _, ok := raw[key]; !ok {
 			t.Fatalf("missing %s in %v", key, raw)
 		}
 	}
-	if len(raw) != 7 {
+	if len(raw) != 8 {
 		t.Fatalf("keys %v", raw)
 	}
 }

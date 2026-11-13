@@ -287,7 +287,8 @@ test('a random chat shows up live and both people can write', async () => {
   await expect(alicePage.getByRole('heading', { level: 2, name: 'Bob Arc' })).toBeVisible();
   await expect(alicePage.getByText('No messages yet.')).toBeVisible();
 
-  const chatLink = bobPage.getByRole('link', { name: /Alice Arc/ });
+  // The thread header links the partner's name too, so look inside the chat list.
+  const chatLink = bobPage.getByRole('navigation', { name: 'Chats' }).getByRole('link', { name: /Alice Arc/ });
   await expect(chatLink).toBeVisible();
   await chatLink.click();
   await expect(bobPage.getByRole('heading', { level: 2, name: 'Alice Arc' })).toBeVisible();

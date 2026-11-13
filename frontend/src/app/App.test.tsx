@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
-import { screen } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import type { ReactElement } from 'react';
@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { meKey } from '../api/me';
 import { admin, member, profileFor } from '../test/fixtures';
 import { render } from '../test/render';
-import { server } from '../test/server';
+import { chatSocket, server } from '../test/server';
 import { App } from './App';
 import { AppRoutes } from './routes';
 
@@ -44,7 +44,7 @@ describe('app shell', () => {
 
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/login?next=%2Fmessenger%3Fx%3D1');
-    expect(screen.getByText('Async Random Coffee: meet your teammates when you have time')).toBeInTheDocument();
+    expect(screen.getByText('Meet your teammates when you have time')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sign in with Google' })).toHaveAttribute(
       'href',
       '/auth/google/start?next=%2Fmessenger%3Fx%3D1',
@@ -102,6 +102,57 @@ describe('app shell', () => {
     expect(screen.queryByRole('region', { name: 'Remove profile' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Admin' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
+  });
+
+  it('shows unread messages in the top bar and the tab title on any page, and keeps them live', async () => {
+    const clients: { send: (data: string) => void }[] = [];
+    const previousTitle = document.title;
+    server.use(
+      chatSocket.addEventListener('connection', ({ client }) => {
+        clients.push(client);
+      }),
+      http.get('/api/chats', () =>
+        HttpResponse.json([
+          {
+            id: 5,
+            partner: { id: 105, name: 'Grace Hopper', avatarUrl: null },
+            lastMessage: { body: 'hi', kind: 'text', createdAt: '2026-11-11T12:00:00Z' },
+            unreadCount: 2,
+          },
+        ]),
+      ),
+    );
+    const view = renderAt('/u/7');
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
+
+    const banner = screen.getByRole('banner');
+    expect(await within(banner).findByLabelText('2 unread messages')).toHaveTextContent('2');
+    // The badge sits next to the link, so the link keeps its plain name.
+    expect(within(banner).getByRole('link', { name: 'Messenger' })).toBeInTheDocument();
+    await waitFor(() => expect(document.title).toBe('(2) ARC'));
+
+    await waitFor(() => expect(clients.length).toBeGreaterThan(0));
+    act(() => {
+      clients.at(-1)?.send(
+        JSON.stringify({
+          type: 'message.new',
+          data: { chatId: 5, message: { id: 9, senderId: 105, kind: 'text', body: 'still there?', createdAt: '2026-11-11T12:01:00Z' } },
+        }),
+      );
+    });
+    expect(await within(banner).findByLabelText('3 unread messages')).toBeInTheDocument();
+    await waitFor(() => expect(document.title).toBe('(3) ARC'));
+
+    view.unmount();
+    expect(document.title).toBe(previousTitle);
+  });
+
+  it('shows no unread badge when everything is read', async () => {
+    renderAt('/u/7');
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
+    await waitFor(() => expect(document.title).toBe('ARC'));
+    expect(screen.queryByLabelText(/unread/)).not.toBeInTheDocument();
+    document.title = '';
   });
 
   it('opens messenger from the top bar', async () => {

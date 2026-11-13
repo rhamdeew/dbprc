@@ -1,9 +1,9 @@
-import { Box, Button, Group, Loader, Modal, Stack, Text, Title } from '@mantine/core';
+import { Box, Button, Divider, Group, Loader, Modal, Stack, Text } from '@mantine/core';
 import { useState } from 'react';
 import { ApiError } from '../../api/client';
 import { useDeleteWallPost, useWall, type WallPost } from '../../api/wall';
 import { Panel } from '../../components/Panel';
-import { BORDER } from '../../theme/theme';
+import { BORDER, HEADER, PANEL } from '../../theme/theme';
 import { WallComposer } from './WallComposer';
 import { WallPostView } from './WallPostView';
 
@@ -28,26 +28,37 @@ export function WallSection({ userId }: WallSectionProps) {
   }
 
   return (
-    <Panel>
-      <Stack gap="md">
-        <Title order={2}>Wall</Title>
+    <Panel title="Wall">
+      <Stack gap="sm">
         {wall.isPending ? (
-          <Loader color="arcBlue" aria-label="Loading wall" />
+          <Loader color="arcBlue" size="sm" aria-label="Loading wall" />
         ) : !wall.data ? (
           <Text>{wallErrorMessage(wall.error)}</Text>
         ) : (
           <>
             <WallComposer userId={userId} />
+            <Divider color={BORDER} />
             {posts.length === 0 ? (
               <Text c="dimmed">No posts yet.</Text>
             ) : (
               <Stack gap="sm">
-                {posts.map((root) => (
-                  <Box key={root.id} className="arc-wall-post" pt="xs" style={{ borderTop: `1px solid ${BORDER}` }}>
+                {posts.map((root, index) => (
+                  <Box
+                    key={root.id}
+                    className={index > 0 ? 'arc-wall-post' : undefined}
+                    pt={index > 0 ? 'xs' : 0}
+                    style={index > 0 ? { borderTop: `1px solid ${BORDER}` } : undefined}
+                  >
                     <Stack gap="xs">
                       <WallPostView post={root} onDelete={root.canDelete ? () => setConfirm(root) : undefined} />
                       {root.replies.length > 0 ? (
-                        <Stack className="arc-wall-replies" gap="xs" pl="md" style={{ borderLeft: `2px solid ${BORDER}` }}>
+                        <Stack
+                          className="arc-wall-replies"
+                          gap="xs"
+                          ml={{ base: 0, sm: 44 }}
+                          p={6}
+                          style={{ borderLeft: `2px solid ${BORDER}`, background: PANEL }}
+                        >
                           {root.replies.map((reply) => (
                             <WallPostView
                               key={reply.id}
@@ -61,7 +72,8 @@ export function WallSection({ userId }: WallSectionProps) {
                         <Button
                           type="button"
                           variant="subtle"
-                          size="compact-sm"
+                          size="compact-xs"
+                          c={HEADER}
                           aria-expanded={replyingTo === root.id}
                           onClick={() => setReplyingTo((current) => (current === root.id ? null : root.id))}
                         >

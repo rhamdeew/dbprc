@@ -4,7 +4,9 @@ ARC is an internal app for about 300 colleagues. Each environment has one API pr
 
 ## Gate
 
-Internet traffic terminates TLS on the edge Caddy. The environment Caddy (`deploy/env/Caddyfile`) then requires Basic Auth on every path except `/healthz`. That password is shared for the whole environment. It keeps the site off the public internet. It does not say who the caller is.
+Internet traffic terminates TLS on the edge Caddy. The environment Caddy (`deploy/env/Caddyfile`) then requires Basic Auth on every path except `/healthz` and `/ws`. That password is shared for the whole environment. It keeps the site off the public internet. It does not say who the caller is.
+
+`/ws` is outside Basic Auth because browsers do not reliably send those credentials on a WebSocket handshake (Safari does not), which would leave the messenger without live updates. The API answers 401 before the upgrade when the session cookie is missing, and 403 when `Origin` is not the app's own host. A session cookie can only be obtained through `/auth/*`, which is behind Basic Auth.
 
 Identity is Google only. `GET /auth/google/callback` accepts an ID token when the audience and issuer match, the nonce matches, `email_verified` is true, and the `hd` claim equals `ALLOWED_DOMAIN`. The `hd` on the authorize URL is not the check. There are no passwords. The first accepted login creates the account. Name and email change only on a later login.
 
@@ -22,6 +24,6 @@ A wall post can be marked anonymous. The author is always stored. The JSON `auth
 
 JSON routes accept at most 32KiB. Routes that do not read a body accept at most 1KiB. Avatar, photo, and wall uploads accept at most 10MB plus 1MB of multipart framing. A larger body is 400 `{"code":"too_large"}`. Per signed-in user, per minute: random chat 10, wall posts 20 (every POST, including a rejected one), chat messages 60, and avatar plus photo uploads 20 together. The next call is 429 `{"code":"rate_limited"}` with `Retry-After`. The counters live in the API process.
 
-The web server sends `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://{host}; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, and HSTS `max-age=31536000`. `/uploads` is `Content-Disposition: inline` and `nosniff`. Dev and end-to-end tests send the same policy except HSTS, which is Caddy-only. CI runs `govulncheck ./...` (Go 1.27.4, `golang.org/x/image` v0.45.0) and `npm audit --audit-level=high`.
+The web server sends `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://{host}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, and HSTS `max-age=31536000`. `/uploads` is `Content-Disposition: inline` and `nosniff`. Dev and end-to-end tests send the same policy except HSTS, which is Caddy-only. CI runs `govulncheck ./...` (Go 1.27.4, `golang.org/x/image` v0.45.0) and `npm audit --audit-level=high`.
 
 Inline styles are allowed for Mantine's generated theme and responsive rules. In staging and production Caddy serves static HTML with a static policy, so there is no per-request nonce injection. Scripts remain restricted to `'self'` through `default-src`; inline scripts and eval are not allowed. The Go dev static server and Caddy keep the same CSP.

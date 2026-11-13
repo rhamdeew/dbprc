@@ -197,12 +197,21 @@ func TestAdminDeleteCascade(t *testing.T) {
 		testutil.WithDrawingPath("drawing/on-target.png"),
 		testutil.WithBody("drawn on target"),
 	)
-	testutil.CreateWallPost(t, database,
+	onPartnerWall := testutil.CreateWallPost(t, database,
 		testutil.WithWallOwner(partner.ID),
 		testutil.WithAuthor(target.ID),
 		testutil.WithAnonymous(),
 		testutil.WithDrawingPath("drawing/by-target.png"),
 		testutil.WithBody("anonymous note"),
+	)
+	// Someone else's reply under the target's post on a third wall. The row
+	// goes with its parent, so its drawing has to go too.
+	testutil.CreateWallPost(t, database,
+		testutil.WithWallOwner(partner.ID),
+		testutil.WithAuthor(third.ID),
+		testutil.WithParent(onPartnerWall.ID),
+		testutil.WithDrawingPath("drawing/reply-under-target.png"),
+		testutil.WithBody("reply with a drawing"),
 	)
 	testutil.CreateWallPost(t, database,
 		testutil.WithWallOwner(partner.ID),
@@ -213,6 +222,7 @@ func TestAdminDeleteCascade(t *testing.T) {
 	writeUpload(t, dir, "drawing/on-target.png")
 	writeUpload(t, dir, "drawing/by-target.png")
 	writeUpload(t, dir, "drawing/partner-own.png")
+	writeUpload(t, dir, "drawing/reply-under-target.png")
 
 	insertInterests(t, database, target.ID, "chess")
 	insertInterests(t, database, partner.ID, "jazz")
@@ -260,7 +270,7 @@ func TestAdminDeleteCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 	decodeJSON(t, res, &before)
-	if before != (statsBody{Users: 4, AvailableUsers: 4, Chats: 3, Messages: 4, WallPosts: 5, Photos: 3}) {
+	if before != (statsBody{Users: 4, AvailableUsers: 4, Chats: 3, Messages: 4, WallPosts: 6, Photos: 3}) {
 		t.Fatalf("stats before %+v", before)
 	}
 
@@ -331,7 +341,7 @@ func TestAdminDeleteCascade(t *testing.T) {
 			t.Fatalf("session %s missing", token)
 		}
 	}
-	for _, rel := range []string{"avatar/target.jpg", "photo/target-1.jpg", "photo/target-2.jpg", "drawing/on-target.png", "drawing/by-target.png"} {
+	for _, rel := range []string{"avatar/target.jpg", "photo/target-1.jpg", "photo/target-2.jpg", "drawing/on-target.png", "drawing/by-target.png", "drawing/reply-under-target.png"} {
 		if fileExists(dir, rel) {
 			t.Fatalf("file %s still on disk", rel)
 		}

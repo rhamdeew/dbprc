@@ -182,7 +182,7 @@ func TestRunServesUntilCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	errCh := make(chan error, 1)
-	go func() { errCh <- run(ctx, addr, "", log) }()
+	go func() { errCh <- run(ctx, addr, "", log, false) }()
 
 	deadline := time.Now().Add(5 * time.Second)
 	var ready bool
@@ -228,7 +228,7 @@ func TestRunListenError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ln.Close() })
-	err = run(context.Background(), addr, addr, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	err = run(context.Background(), addr, addr, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 	if err == nil {
 		t.Fatal("expected listen error")
 	}
@@ -423,4 +423,180 @@ func freeAddr(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return addr
+}
+
+func authorizeQuery(extra url.Values) url.Values {
+	q := url.Values{}
+	q.Set("scope", "openid email profile")
+	q.Set("state", "s")
+	q.Set("nonce", "n-1")
+	q.Set("client_id", devClientID)
+	q.Set("response_type", "code")
+	q.Set("redirect_uri", "http://127.0.0.1/callback")
+	for key, values := range extra {
+		q[key] = values
+	}
+	return q
+}
+
+// authorize sends one authorize request without following the redirect.
+func authorize(t *testing.T, srv *server, extra url.Values) (int, string, string) {
+	t.Helper()
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Get(srv.origin() + mockoidc.AuthorizationEndpoint + "?" + authorizeQuery(extra).Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.StatusCode, resp.Header.Get("Location"), string(body)
+}
+
+// claimsFor redeems the code in an authorize redirect.
+func claimsFor(t *testing.T, srv *server, location string) jwt.MapClaims {
+	t.Helper()
+	loc, err := url.Parse(location)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", loc.Query().Get("code"))
+	form.Set("client_id", devClientID)
+	form.Set("client_secret", devClientSecret)
+	resp, err := http.PostForm(srv.origin()+mockoidc.TokenEndpoint, form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var tok struct {
+		IDToken string `json:"id_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := srv.oidc.Keypair.VerifyJWT(tok.IDToken, srv.oidc.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatalf("claims type %T", parsed.Claims)
+	}
+	return claims
+}
+
+func TestInteractiveFormPicksTheUser(t *testing.T) {
+	srv := startServer(t, "")
+	srv.interactive.Store(true)
+
+	status, _, page := authorize(t, srv, nil)
+	if status != http.StatusOK {
+		t.Fatalf("form status %d", status)
+	}
+	for _, want := range []string{
+		`name="mock_email"`, `value="` + defaultEmail + `"`, `name="mock_name"`,
+		`name="state" value="s"`, `name="redirect_uri" value="http://127.0.0.1/callback"`, `name="client_id" value="` + devClientID + `"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("form misses %s in %s", want, page)
+		}
+	}
+
+	status, location, _ := authorize(t, srv, url.Values{"mock_email": {" Bea@Example.com "}, "mock_name": {" Bea B "}})
+	if status != http.StatusFound {
+		t.Fatalf("pick status %d", status)
+	}
+	bea := claimsFor(t, srv, location)
+	if bea["email"] != "Bea@Example.com" || bea["name"] != "Bea B" || bea["hd"] != "example.com" || bea["email_verified"] != true {
+		t.Fatalf("picked %v", bea)
+	}
+	if bea["picture"] != srv.origin()+avatarPath+"?seed=Bea%40Example.com" {
+		t.Fatalf("picture %v", bea["picture"])
+	}
+
+	// No name: the local part. Another domain keeps its own hd, so the app can show its domain error.
+	_, location, _ = authorize(t, srv, url.Values{"mock_email": {"cy@other.dev"}})
+	cy := claimsFor(t, srv, location)
+	if cy["name"] != "cy" || cy["hd"] != "other.dev" {
+		t.Fatalf("other domain %v", cy)
+	}
+
+	// The pick is for one request. The next one asks again.
+	if status, _, _ := authorize(t, srv, nil); status != http.StatusOK {
+		t.Fatalf("second form status %d", status)
+	}
+}
+
+func TestInteractiveFormRejectsABadEmail(t *testing.T) {
+	srv := startServer(t, "")
+	srv.interactive.Store(true)
+
+	status, _, page := authorize(t, srv, url.Values{"mock_email": {"<nobody>"}, "mock_name": {"N"}})
+	if status != http.StatusOK || !strings.Contains(page, "Enter a full email address.") {
+		t.Fatalf("status %d page %s", status, page)
+	}
+	if strings.Contains(page, "<nobody>") || !strings.Contains(page, "&lt;nobody&gt;") {
+		t.Fatalf("input was not escaped: %s", page)
+	}
+	// The rejected values are not carried along as hidden fields.
+	if strings.Count(page, `name="mock_email"`) != 1 || strings.Count(page, `name="mock_name"`) != 1 {
+		t.Fatalf("duplicate fields: %s", page)
+	}
+}
+
+func TestInteractiveQueueSkipsTheForm(t *testing.T) {
+	srv := startServer(t, "")
+	srv.interactive.Store(true)
+	postNext(t, srv, `{"email":"ada@example.com","name":"Ada"}`)
+
+	// E2E-style queueing wins over both the form and mock_email.
+	status, location, _ := authorize(t, srv, url.Values{"mock_email": {"bea@example.com"}})
+	if status != http.StatusFound {
+		t.Fatalf("status %d", status)
+	}
+	if got := claimsFor(t, srv, location); got["email"] != "ada@example.com" || got["picture"] != defaultPicture {
+		t.Fatalf("queued %v", got)
+	}
+}
+
+func TestMockEmailIsIgnoredWithoutInteractive(t *testing.T) {
+	srv := startServer(t, "")
+	status, location, _ := authorize(t, srv, url.Values{"mock_email": {"bea@example.com"}})
+	if status != http.StatusFound {
+		t.Fatalf("status %d", status)
+	}
+	assertDefaultClaims(t, srv, claimsFor(t, srv, location))
+}
+
+func TestAvatarIsAPNGThatFollowsTheSeed(t *testing.T) {
+	srv := startServer(t, "")
+	fetch := func(seed string) []byte {
+		t.Helper()
+		resp, err := http.Get(srv.origin() + avatarPath + "?seed=" + url.QueryEscape(seed))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/png" {
+			t.Fatalf("avatar %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	ada, bea := fetch("ada@example.com"), fetch("bea@example.com")
+	if !bytes.HasPrefix(ada, []byte("\x89PNG\r\n\x1a\n")) {
+		t.Fatalf("not a png: %q", ada[:8])
+	}
+	if bytes.Equal(ada, bea) || !bytes.Equal(ada, fetch("ada@example.com")) {
+		t.Fatal("avatar does not follow the seed")
+	}
 }
