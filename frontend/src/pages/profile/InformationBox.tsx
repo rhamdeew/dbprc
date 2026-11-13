@@ -41,8 +41,7 @@ export function InformationBox({ profile }: InformationBoxProps) {
                 <TextInput
                   label={field.label}
                   value={draft}
-                  maxLength={500}
-                  onChange={(event) => setDraft(event.currentTarget.value)}
+                  onChange={(event) => setDraft(Array.from(event.currentTarget.value).slice(0, 500).join(''))}
                 />
                 <Group gap="xs">
                   <Button type="button" size="compact-sm" loading={save.isPending} onClick={submit}>
@@ -60,7 +59,7 @@ export function InformationBox({ profile }: InformationBoxProps) {
               <Text fw={700} w={64} style={{ flexShrink: 0 }}>
                 {field.label}
               </Text>
-              <Text style={{ flex: 1 }} c={value === '' ? 'dimmed' : undefined}>
+              <Text style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }} c={value === '' ? 'dimmed' : undefined}>
                 {value === '' ? 'Not set' : value}
               </Text>
               {profile.isMe ? (

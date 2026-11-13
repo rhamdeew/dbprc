@@ -26,6 +26,7 @@ jobs:
         include:
           - { name: api, context: backend, file: backend/Dockerfile }
           - { name: web, context: ., file: deploy/env/web.Dockerfile }
+          - { name: backup, context: ., file: deploy/backup/Dockerfile }
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
@@ -81,9 +82,16 @@ jobs:
           BASIC_AUTH_HASH: ${{ secrets.BASIC_AUTH_HASH }}
           OIDC_CLIENT_ID: ${{ secrets.OIDC_CLIENT_ID }}
           OIDC_CLIENT_SECRET: ${{ secrets.OIDC_CLIENT_SECRET }}
+          MESSAGE_KEY: ${{ secrets.MESSAGE_KEY }}
+          MESSAGE_KEY_OLD: ${{ secrets.MESSAGE_KEY_OLD }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
           ALLOWED_DOMAIN: ${{ secrets.ALLOWED_DOMAIN }}
+          RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}
+          RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          BACKUP_PING_URL: ${{ secrets.BACKUP_PING_URL }}
         run: |
           case "$ENV_NAME" in
             prod) WEB_PORT=8081 ;;
@@ -104,15 +112,25 @@ jobs:
             kv BASIC_AUTH_HASH "$BASIC_AUTH_HASH"
             kv OIDC_CLIENT_ID "$OIDC_CLIENT_ID"
             kv OIDC_CLIENT_SECRET "$OIDC_CLIENT_SECRET"
+            kv MESSAGE_KEY "$MESSAGE_KEY"
+            if [ -n "$MESSAGE_KEY_OLD" ]; then kv MESSAGE_KEY_OLD "$MESSAGE_KEY_OLD"; fi
             kv SESSION_SECRET "$SESSION_SECRET"
             kv ADMIN_EMAILS "$ADMIN_EMAILS"
             kv ALLOWED_DOMAIN "$ALLOWED_DOMAIN"
+            kv RESTIC_REPOSITORY "$RESTIC_REPOSITORY"
+            kv RESTIC_PASSWORD "$RESTIC_PASSWORD"
+            kv AWS_ACCESS_KEY_ID "$AWS_ACCESS_KEY_ID"
+            kv AWS_SECRET_ACCESS_KEY "$AWS_SECRET_ACCESS_KEY"
+            kv BACKUP_PING_URL "$BACKUP_PING_URL"
+            profiles=
+            if [ -n "$RESTIC_REPOSITORY" ]; then profiles=backup; fi
+            kv COMPOSE_PROFILES "$profiles"
           } > .env.new
 
       - name: Upload files
         run: |
           ssh vps 'mkdir -p ~/arc'
-          scp deploy/env/compose.yml deploy/env/deploy.sh .env.new vps:arc/
+          scp deploy/env/compose.yml deploy/env/deploy.sh deploy/backup/restore.sh .env.new vps:arc/
           rm -f .env.new
 
       - name: Deploy ${{ github.sha }}

@@ -50,10 +50,28 @@ func TestLoad(t *testing.T) {
 		{name: "bad base scheme", env: map[string]string{"APP_BASE_URL": "ftp://arc.example"}, wantErr: true},
 		{name: "bad cookie", env: map[string]string{"SESSION_COOKIE": "arc sid"}, wantErr: true},
 		{name: "cookie with semicolon", env: map[string]string{"SESSION_COOKIE": "a;b"}, wantErr: true},
+		{
+			name: "static dir dev",
+			env:  map[string]string{"STATIC_DIR": " /srv "},
+			want: Config{Env: "dev", Port: 8080, Version: "dev", DataDir: "./data", UploadDir: "./uploads", StaticDir: "/srv", SessionCookie: DefaultSessionCookie, OIDCIssuer: DefaultOIDCIssuer},
+		},
+		{
+			name: "static dir test",
+			env:  map[string]string{"APP_ENV": "test", "STATIC_DIR": "web"},
+			want: Config{Env: "test", Port: 8080, Version: "dev", DataDir: "./data", UploadDir: "./uploads", StaticDir: "web", SessionCookie: DefaultSessionCookie, OIDCIssuer: DefaultOIDCIssuer},
+		},
+		{name: "blank static dir prod", env: map[string]string{"APP_ENV": "prod", "STATIC_DIR": "  "}, want: Config{Env: "prod", Port: 8080, Version: "dev", DataDir: "./data", UploadDir: "./uploads", SessionCookie: DefaultSessionCookie, OIDCIssuer: DefaultOIDCIssuer}},
+		{name: "static dir prod", env: map[string]string{"APP_ENV": "prod", "STATIC_DIR": "/srv"}, wantErr: true},
+		{name: "static dir staging", env: map[string]string{"APP_ENV": "staging", "STATIC_DIR": "/srv"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Load(env(tt.env))
+			values := map[string]string{"MESSAGE_KEY": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+			for k, v := range tt.env {
+				values[k] = v
+			}
+			got, err := Load(env(values))
+			tt.want.MessageKey = make([]byte, 32)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got %+v", got)
@@ -104,5 +122,23 @@ func TestDBPath(t *testing.T) {
 	cfg.DataDir = "/data"
 	if got, want := cfg.DBPath(), filepath.Join("/data", "arc.db"); got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestMessageKeys(t *testing.T) {
+	const valid = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	for _, environment := range []string{"dev", "test", "staging", "prod"} {
+		for _, raw := range []string{"", "not-base64", "c2hvcnQ=", valid + "junk"} {
+			if _, err := Load(env(map[string]string{"APP_ENV": environment, "MESSAGE_KEY": raw})); err == nil {
+				t.Fatalf("accepted invalid key in %s", environment)
+			}
+		}
+	}
+	if _, err := Load(env(map[string]string{"MESSAGE_KEY": valid, "MESSAGE_KEY_OLD": "bad"})); err == nil {
+		t.Fatal("accepted bad old key")
+	}
+	cfg, err := Load(env(map[string]string{"MESSAGE_KEY": valid, "MESSAGE_KEY_OLD": valid}))
+	if err != nil || len(cfg.MessageKeyOld) != 32 {
+		t.Fatalf("old key: %v", err)
 	}
 }

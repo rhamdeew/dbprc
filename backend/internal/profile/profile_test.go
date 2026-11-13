@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"hash/crc32"
 	"image"
 	"image/jpeg"
@@ -11,6 +12,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -24,6 +26,41 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/testutil"
 	"github.com/rhamdeew/dbprc/backend/internal/upload"
 )
+
+func TestTruncatedPNGUpload(t *testing.T) {
+	fixture, err := os.ReadFile("../../../e2e/fixtures/photo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture) < 24 {
+		t.Fatal("photo fixture is shorter than 24 bytes")
+	}
+	for _, endpoint := range []string{"photos", "avatar"} {
+		t.Run(endpoint, func(t *testing.T) {
+			srv, dir := newProfileServer(t)
+			database := testutil.Database(t, srv)
+			user := testutil.CreateUser(t, database)
+			client := testutil.LoginAs(t, srv, user)
+			for attempt := 0; attempt < 2; attempt++ {
+				res := postFile(t, client, srv.URL+"/api/me/"+endpoint, "truncated.png", fixture[:24])
+				assertAPIError(t, res, http.StatusBadRequest, "invalid_image", "That image could not be read. Try another image.")
+				if n := photoCount(t, database, user.ID); n != 0 {
+					t.Fatalf("rejected upload left %d photos", n)
+				}
+				if row := loadUser(t, database, user.ID); row.avatar != nil {
+					t.Fatal("rejected upload changed avatar")
+				}
+				if files := fileSet(t, dir); len(files) != 0 {
+					t.Fatalf("rejected upload left files: %v", files)
+				}
+				status, profile, _ := getProfile(t, client, srv.URL+"/api/users/"+itoa(user.ID))
+				if status != http.StatusOK || len(profile.Photos) != 0 {
+					t.Fatalf("reload after rejection: %d %+v", status, profile)
+				}
+			}
+		})
+	}
+}
 
 func TestGetProfile(t *testing.T) {
 	srv, dir := newProfileServer(t)
@@ -574,7 +611,13 @@ func postFile(t *testing.T, client *http.Client, url, filename string, body []by
 func fileRequest(url, filename string, body []byte) (*http.Request, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
-	part, err := w.CreateFormFile("file", filename)
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, filename))
+	header.Set("Content-Type", "application/octet-stream")
+	if strings.HasSuffix(filename, ".png") {
+		header.Set("Content-Type", "image/png")
+	}
+	part, err := w.CreatePart(header)
 	if err != nil {
 		return nil, err
 	}
@@ -744,6 +787,76 @@ func loadUser(t *testing.T, database *db.DB, id int64) storedUser {
 		t.Fatal(err)
 	}
 	return row
+}
+
+func TestUploadRateAndBodyLimits(t *testing.T) {
+	srv, _ := newProfileServer(t)
+	database := testutil.Database(t, srv)
+	me := testutil.CreateUser(t, database, testutil.WithName("Ada"), testutil.WithEmail("ada@example.com"))
+	other := testutil.CreateUser(t, database, testutil.WithName("Bea"), testutil.WithEmail("bea@example.com"))
+	client := testutil.LoginAs(t, srv, me)
+	otherClient := testutil.LoginAs(t, srv, other)
+
+	big := bytes.Repeat([]byte("a"), int(upload.MaxBytes+(1<<20))+1)
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/me/avatar", bytes.NewReader(big))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAPIError(t, res, http.StatusBadRequest, "too_large", "Request body is too large.")
+
+	interests := bytes.Repeat([]byte("b"), int(httpx.JSONBodyLimit)+1)
+	req, err = http.NewRequest(http.MethodPut, srv.URL+"/api/me/interests", bytes.NewReader(interests))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAPIError(t, res, http.StatusBadRequest, "too_large", "Request body is too large.")
+
+	plain := func(c *http.Client, path string) *http.Response {
+		t.Helper()
+		r, err := http.NewRequest(http.MethodPost, srv.URL+path, strings.NewReader("x"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Header.Set("Content-Type", "text/plain")
+		got, err := c.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	for range 10 {
+		assertAPIError(t, plain(client, "/api/me/avatar"), http.StatusBadRequest, "invalid")
+		assertAPIError(t, plain(client, "/api/me/photos"), http.StatusBadRequest, "invalid")
+	}
+	res = plain(client, "/api/me/avatar")
+	assertAPIError(t, res, http.StatusTooManyRequests, "rate_limited", "Too many requests. Try again in a minute.")
+	if res.Header.Get("Retry-After") == "" {
+		t.Fatal("missing Retry-After")
+	}
+	res = plain(otherClient, "/api/me/photos")
+	if res.StatusCode == http.StatusTooManyRequests {
+		t.Fatal("other user was limited")
+	}
+	assertAPIError(t, res, http.StatusBadRequest, "invalid")
+
+	req, err = http.NewRequest(http.MethodDelete, srv.URL+"/api/me/photos/1", bytes.NewReader(bytes.Repeat([]byte("c"), int(httpx.SmallBodyLimit)+1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err = otherClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAPIError(t, res, http.StatusBadRequest, "too_large", "Request body is too large.")
 }
 
 func photoCount(t *testing.T, database *db.DB, userID int64) int {

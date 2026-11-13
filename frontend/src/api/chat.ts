@@ -6,7 +6,7 @@ import {
   type InfiniteData,
   type QueryClient,
 } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from './client';
 import { meKey, type Me } from './me';
 
@@ -159,7 +159,7 @@ export function useSendMessage(chatId: number) {
       const previousChats = queryClient.getQueryData<ChatSummary[]>(chatsKey);
       queryClient.setQueryData<MessageCache>(messagesKey(chatId), (current) => appendOptimistic(current, optimistic));
       queryClient.setQueryData<ChatSummary[]>(chatsKey, (list) =>
-        noteIncoming(list, chatId, optimistic, { mine: true, visible: true }),
+        noteIncoming(list, chatId, optimistic, { mine: true, visible: !document.hidden }),
       );
       return { tempId: optimistic.id, previousMessages, previousChats };
     },
@@ -168,7 +168,7 @@ export function useSendMessage(chatId: number) {
         settleOptimistic(current, context.tempId, saved),
       );
       queryClient.setQueryData<ChatSummary[]>(chatsKey, (list) =>
-        noteIncoming(list, chatId, saved, { mine: true, visible: true }),
+        noteIncoming(list, chatId, saved, { mine: true, visible: !document.hidden }),
       );
     },
     onError: (_error, _body, context) => {
@@ -183,18 +183,27 @@ export function useSendMessage(chatId: number) {
 export function useMarkThreadRead(chatId: number, lastMessageId: number | null) {
   const queryClient = useQueryClient();
   const chats = useChats();
-  const sent = useRef(0);
+  const sent = useRef<{ chatId: number; messageId: number } | null>(null);
+  const [visible, setVisible] = useState(() => !document.hidden);
 
   useEffect(() => {
+    const onVisibilityChange = () => setVisible(!document.hidden);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    onVisibilityChange();
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
+
+  useEffect(() => {
+    if (!visible || document.hidden || lastMessageId === null) return;
     const list = chats.data;
     if (!list?.some((chat) => chat.id === chatId && chat.unreadCount > 0)) return;
     queryClient.setQueryData<ChatSummary[]>(chatsKey, zeroUnread(list, chatId));
-  }, [chatId, chats.data, queryClient]);
+  }, [chatId, chats.data, lastMessageId, queryClient, visible]);
 
   useEffect(() => {
-    if (lastMessageId === null || lastMessageId <= 0) return;
-    if (sent.current === lastMessageId) return;
-    sent.current = lastMessageId;
+    if (!visible || document.hidden || lastMessageId === null || lastMessageId <= 0) return;
+    if (sent.current?.chatId === chatId && sent.current.messageId === lastMessageId) return;
+    sent.current = { chatId, messageId: lastMessageId };
     let cancelled = false;
     api<{ lastMessageId: number }>(`/api/chats/${chatId}/read`, {
       method: 'POST',
@@ -202,7 +211,7 @@ export function useMarkThreadRead(chatId: number, lastMessageId: number | null) 
       silent: true,
     })
       .then(() => {
-        if (cancelled) return;
+        if (cancelled || document.hidden) return;
         queryClient.setQueryData<ChatSummary[]>(chatsKey, (list) => zeroUnread(list, chatId));
       })
       .catch(() => {
@@ -211,7 +220,7 @@ export function useMarkThreadRead(chatId: number, lastMessageId: number | null) 
     return () => {
       cancelled = true;
     };
-  }, [chatId, lastMessageId, queryClient]);
+  }, [chatId, lastMessageId, queryClient, visible]);
 }
 
 let tempId = 0;
@@ -298,7 +307,7 @@ export function ingestMessage(current: MessageCache | undefined, message: ChatMe
 export function applyMessageToCache(queryClient: QueryClient, chatId: number, message: ChatMessage, openChatId: number | null) {
   const me = queryClient.getQueryData<Me>(meKey);
   const mine = me !== undefined && message.senderId === me.id;
-  const visible = openChatId === chatId;
+  const visible = openChatId === chatId && !document.hidden;
   const list = queryClient.getQueryData<ChatSummary[]>(chatsKey);
   if (!list) {
     void queryClient.invalidateQueries({ queryKey: chatsKey });

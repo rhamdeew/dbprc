@@ -43,11 +43,11 @@ export function WallSection({ userId }: WallSectionProps) {
             ) : (
               <Stack gap="sm">
                 {posts.map((root) => (
-                  <Box key={root.id} pt="xs" style={{ borderTop: `1px solid ${BORDER}` }}>
+                  <Box key={root.id} className="arc-wall-post" pt="xs" style={{ borderTop: `1px solid ${BORDER}` }}>
                     <Stack gap="xs">
                       <WallPostView post={root} onDelete={root.canDelete ? () => setConfirm(root) : undefined} />
                       {root.replies.length > 0 ? (
-                        <Stack gap="xs" pl="md" style={{ borderLeft: `2px solid ${BORDER}` }}>
+                        <Stack className="arc-wall-replies" gap="xs" pl="md" style={{ borderLeft: `2px solid ${BORDER}` }}>
                           {root.replies.map((reply) => (
                             <WallPostView
                               key={reply.id}

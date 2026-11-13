@@ -45,18 +45,18 @@ func prepare(data []byte, kind Kind) ([]byte, string, error) {
 
 	cfg, err := decodeConfig(data, f)
 	if err != nil {
-		return nil, "", fmt.Errorf("read image header: %w", err)
+		return nil, "", fmt.Errorf("%w: read image header: %w", ErrInvalidImage, err)
 	}
 	if cfg.Width > MaxEdge || cfg.Height > MaxEdge {
 		return nil, "", fmt.Errorf("%w: %dx%d", ErrDimensions, cfg.Width, cfg.Height)
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 {
-		return nil, "", fmt.Errorf("invalid image dimensions %dx%d", cfg.Width, cfg.Height)
+		return nil, "", fmt.Errorf("%w: invalid image dimensions %dx%d", ErrInvalidImage, cfg.Width, cfg.Height)
 	}
 
 	img, err := decodeOriented(data, f)
 	if err != nil {
-		return nil, "", fmt.Errorf("decode image: %w", err)
+		return nil, "", fmt.Errorf("%w: decode image: %w", ErrInvalidImage, err)
 	}
 	out, ext, enc, err := transform(img, kind)
 	if err != nil {

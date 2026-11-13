@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -370,6 +371,30 @@ func assertNoContent(t *testing.T, res *http.Response) {
 	}
 	if !cleared {
 		t.Fatal("logout did not clear the cookie")
+	}
+}
+
+func TestLogoutRejectsLargeBody(t *testing.T) {
+	srv := testutil.NewServer(t)
+	user := testutil.CreateUser(t, testutil.Database(t, srv), testutil.WithEmail("ada@example.com"), testutil.WithName("Ada"))
+	client := testutil.LoginAs(t, srv, user)
+	body := bytes.Repeat([]byte("a"), int(httpx.SmallBodyLimit)+1)
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/auth/logout", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAPIError(t, res, http.StatusBadRequest, "too_large")
+	res, err = client.Get(srv.URL + "/api/me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("session after oversized logout: %d", res.StatusCode)
 	}
 }
 

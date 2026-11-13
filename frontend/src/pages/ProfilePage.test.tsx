@@ -114,6 +114,30 @@ describe('profile page', () => {
     expect(screen.queryByRole('textbox', { name: 'Music' })).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['500 emoji', '😀'.repeat(500), '😀'.repeat(500)],
+    ['501 emoji', `${'😀'.repeat(500)}😁`, '😀'.repeat(500)],
+    ['mixed characters at the boundary', `${'A'.repeat(499)}😀😁`, `${'A'.repeat(499)}😀`],
+  ])('pastes and saves %s by Unicode code point', async (_label, pasted, expected) => {
+    const user = userEvent.setup();
+    mockProfile(profileFor(member));
+    let saved: Interests | undefined;
+    server.use(http.put('/api/me/interests', async ({ request }) => {
+      saved = (await request.json()) as Interests;
+      return HttpResponse.json(saved);
+    }));
+    renderProfile('7');
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Hobby' }));
+    const input = screen.getByRole('textbox', { name: 'Hobby' });
+    await user.click(input);
+    await user.paste(pasted);
+    expect(input).toHaveValue(expected);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saved?.hobby).toBe(expected));
+    expect(await screen.findByText(expected)).toBeInTheDocument();
+  });
+
   it('cancels an interest edit without saving', async () => {
     const user = userEvent.setup();
     mockProfile(profileFor(member, { interests: { hobby: 'chess', music: '', movies: '', other: '' } }));
@@ -225,6 +249,27 @@ describe('profile page', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Use a JPEG, PNG, GIF, or WebP image.');
     expect(screen.queryByRole('img', { name: 'Ada Lovelace, profile photo' })).not.toBeInTheDocument();
+  });
+
+  it('shows a friendly invalid-image error without adding a photo', async () => {
+    const user = userEvent.setup();
+    mockProfile(profileFor(member));
+    server.use(
+      http.post('/api/me/photos', () => HttpResponse.json(
+        { code: 'invalid_image', message: 'That image could not be read. Try another image.' },
+        { status: 400 },
+      )),
+    );
+    renderProfile('7');
+
+    expect(await screen.findByRole('button', { name: 'Add photo' })).toBeInTheDocument();
+    await user.upload(fileInput('Add a photo'), imageFile('truncated.png'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('That image could not be read. Try another image.');
+    expect(screen.getByRole('heading', { name: 'Photos (0/5)' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open photo/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar', { name: 'Photo upload' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add photo' })).toBeEnabled();
   });
 
   it('adds a photo and deletes it after confirm', async () => {

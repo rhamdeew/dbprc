@@ -17,6 +17,7 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/db"
 	"github.com/rhamdeew/dbprc/backend/internal/db/sqlc"
 	"github.com/rhamdeew/dbprc/backend/internal/httpx"
+	"github.com/rhamdeew/dbprc/backend/internal/msgcrypt"
 )
 
 func openDB(t *testing.T) *db.DB {
@@ -61,7 +62,7 @@ func TestOriginPatterns(t *testing.T) {
 }
 
 func TestServeHTTPRequiresUser(t *testing.T) {
-	hub := New(openDB(t), discardLog(), "http://app.example")
+	hub := New(openDB(t), discardLog(), "http://app.example", testCipher(t))
 	t.Cleanup(hub.Close)
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	rr := httptest.NewRecorder()
@@ -79,7 +80,7 @@ func TestServeHTTPRequiresUser(t *testing.T) {
 }
 
 func TestChatViewMissing(t *testing.T) {
-	hub := New(openDB(t), discardLog(), "http://app.example")
+	hub := New(openDB(t), discardLog(), "http://app.example", testCipher(t))
 	t.Cleanup(hub.Close)
 	if _, err := hub.chatView(1, 99); err == nil {
 		t.Fatal("expected error")
@@ -87,7 +88,7 @@ func TestChatViewMissing(t *testing.T) {
 }
 
 func TestPublishNoSockets(t *testing.T) {
-	hub := New(openDB(t), discardLog(), "http://app.example")
+	hub := New(openDB(t), discardLog(), "http://app.example", testCipher(t))
 	t.Cleanup(hub.Close)
 	hub.MessageCreated(chat.Message{
 		ID: 1, ChatID: 2, Kind: "text", Body: "hi", CreatedAt: "2026-01-02T03:04:05Z",
@@ -98,7 +99,7 @@ func TestPublishNoSockets(t *testing.T) {
 }
 
 func TestPing(t *testing.T) {
-	hub := New(openDB(t), discardLog(), "http://localhost")
+	hub := New(openDB(t), discardLog(), "http://localhost", testCipher(t))
 	hub.pingEvery = 20 * time.Millisecond
 	t.Cleanup(hub.Close)
 
@@ -135,7 +136,7 @@ func TestPing(t *testing.T) {
 }
 
 func TestClientDataCloses(t *testing.T) {
-	hub := New(openDB(t), discardLog(), "http://localhost")
+	hub := New(openDB(t), discardLog(), "http://localhost", testCipher(t))
 	t.Cleanup(hub.Close)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(httpx.WithUser(r.Context(), sqlc.User{ID: 1}))
@@ -162,7 +163,7 @@ func TestClientDataCloses(t *testing.T) {
 }
 
 func TestOverflowDropsSlowClient(t *testing.T) {
-	hub := New(openDB(t), discardLog(), "http://app.example")
+	hub := New(openDB(t), discardLog(), "http://app.example", testCipher(t))
 	t.Cleanup(hub.Close)
 
 	slow, slowServer := dialPair(t)
@@ -210,7 +211,7 @@ func TestOverflowDropsSlowClient(t *testing.T) {
 }
 
 func TestCloseRejectsNewSockets(t *testing.T) {
-	hub := New(openDB(t), discardLog(), "http://localhost")
+	hub := New(openDB(t), discardLog(), "http://localhost", testCipher(t))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(httpx.WithUser(r.Context(), sqlc.User{ID: 1}))
 		hub.ServeHTTP(w, r)
@@ -266,4 +267,29 @@ func dialPair(t *testing.T) (clientConn, serverConn *websocket.Conn) {
 		t.Fatal("accept did not finish")
 	}
 	return clientConn, serverConn
+}
+
+func testCipher(t *testing.T) *msgcrypt.Cipher {
+	t.Helper()
+	c, err := msgcrypt.New(make([]byte, 32), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestChatPreviewDecryption(t *testing.T) {
+	crypt := testCipher(t)
+	hub := New(openDB(t), discardLog(), "http://app.example", crypt)
+	t.Cleanup(hub.Close)
+	id := int64(99)
+	body, kind, created := crypt.Encrypt(42, "private preview"), "text", "2026-11-12T00:00:00Z"
+	row := sqlc.ListChatsForUserRow{ID: 42, LastMessageID: &id, LastBody: &body, LastKind: &kind, LastCreatedAt: &created}
+	if view := hub.toChatJSON(row); view.LastMessage == nil || view.LastMessage.Body != "private preview" {
+		t.Fatal("encrypted preview")
+	}
+	body = "damaged"
+	if view := hub.toChatJSON(row); view.LastMessage == nil || view.LastMessage.Body != "[message unavailable]" {
+		t.Fatal("missing damaged placeholder")
+	}
 }

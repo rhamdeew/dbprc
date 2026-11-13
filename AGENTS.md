@@ -36,6 +36,7 @@ make setup      # frontend deps only
 make lint    # golangci-lint + eslint + tsc
 make test    # all unit/integration tests, no Docker or network needed
 make dev     # mockoidc :9999 + api :8080 + vite :5173
+make e2e     # build the frontend, mockoidc + api with a temp DB, Playwright (no Docker)
 ```
 
 `make lint test` must pass before you push. Always use the make targets: they put the pinned tools (`toolchain.env`, Go from `backend/go.mod`) first on PATH and install any missing one automatically (`ensure-*` prerequisites), so `make lint test` works even in a fresh container. Do not install Go, golangci-lint or sqlc any other way, and never change their versions unless the card says so.
@@ -46,7 +47,7 @@ make dev     # mockoidc :9999 + api :8080 + vite :5173
 - **Auth:** every `/api/*` route except explicitly public ones requires a session. Never trust IDs from the client for ownership; use the session user.
 - **SQL:** parameterized only (sqlc). Every multi-step write runs in one transaction.
 - **Time:** UTC everywhere, RFC3339 in JSON.
-- **Files:** user uploads only through `internal/upload`. Never serve user files from the API.
+- **Files:** user uploads only through `internal/upload`. The API serves them only when `STATIC_DIR` is set (dev/E2E stand-in for the web container). Staging and prod leave `STATIC_DIR` empty.
 - **Logging:** `slog` with key/value pairs. Never log secrets, session tokens, message bodies or emails in clear text.
 - **No global mutable state.** Pass dependencies explicitly.
 - **Frontend:** data fetching only through TanStack Query hooks in `src/api`. Components stay small; pages compose them. Accessible labels on every input and button.
@@ -73,7 +74,9 @@ Coverage targets: Go ≥ 80%, frontend ≥ 70% (lines).
 
 ## Environment variables
 
-Read only in `internal/config`. Current and planned: `APP_ENV` (dev|test|staging|prod), `PORT`, `APP_BASE_URL`, `DATA_DIR` (default `./data`; SQLite file `$DATA_DIR/arc.db`), `UPLOAD_DIR` (default `./uploads`), `SESSION_SECRET`, `SESSION_COOKIE` (default `arc_sid`), `OIDC_ISSUER` (default `https://accounts.google.com`), `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `ALLOWED_DOMAIN`, `ADMIN_EMAILS`, `STATIC_DIR` (dev/E2E only). Read today: `APP_ENV`, `PORT`, `APP_BASE_URL`, `DATA_DIR`, `UPLOAD_DIR`, `SESSION_COOKIE`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `ALLOWED_DOMAIN`, `ADMIN_EMAILS`. Not read yet: `SESSION_SECRET` (scs does not use it; the OIDC state cookie uses a process-local HMAC key), `STATIC_DIR`. Adding a new variable: document it here and in `docs/ARCHITECTURE.md`, and say in the PR body that `.github/workflows/deploy.yml` needs it (a human wires the secret). `APP_BASE_URL`, `ADMIN_EMAILS`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `ALLOWED_DOMAIN` are already injected by the deploy workflow. `OIDC_ISSUER` is not: production uses the Google default.
+Read only in `internal/config`. Current and planned: `APP_ENV` (dev|test|staging|prod), `PORT`, `APP_BASE_URL`, `DATA_DIR` (default `./data`; SQLite file `$DATA_DIR/arc.db`), `UPLOAD_DIR` (default `./uploads`), `SESSION_SECRET`, `SESSION_COOKIE` (default `arc_sid`), `OIDC_ISSUER` (default `https://accounts.google.com`), `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `ALLOWED_DOMAIN`, `ADMIN_EMAILS`, `STATIC_DIR` (dev/E2E only; `Load` rejects it when `APP_ENV` is staging or prod). Read today: `MESSAGE_KEY` (required base64 of 32 bytes), `MESSAGE_KEY_OLD` (optional previous key for reads), `APP_ENV`, `PORT`, `APP_BASE_URL`, `DATA_DIR`, `UPLOAD_DIR`, `STATIC_DIR`, `SESSION_COOKIE`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `ALLOWED_DOMAIN`, `ADMIN_EMAILS`. Not read yet: `SESSION_SECRET` (scs does not use it; the OIDC state cookie uses a process-local HMAC key). Adding a new variable: document it here and in `docs/ARCHITECTURE.md`, and say in the PR body that `.github/workflows/deploy.yml` needs it (a human wires the secret). `MESSAGE_KEY`, optional `MESSAGE_KEY_OLD`, `APP_BASE_URL`, `ADMIN_EMAILS`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `ALLOWED_DOMAIN` are already injected by the deploy workflow. `OIDC_ISSUER` is not: production uses the Google default. Do not add `STATIC_DIR` to the deploy workflow: production leaves it empty and the web container serves the frontend and uploads.
+
+Backup-only variables are consumed by Compose and `deploy/backup` (not the Go API): `RESTIC_REPOSITORY`, `RESTIC_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `BACKUP_PING_URL`. Deploy maps the AWS variables from `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` GitHub Environment secrets and enables `COMPOSE_PROFILES=backup` only when the repository is configured.
 
 ## When you are stuck
 

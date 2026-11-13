@@ -31,7 +31,7 @@ func Routes(mux *http.ServeMux, cfg config.Config, log *slog.Logger, sessions *s
 		log = slog.New(slog.DiscardHandler)
 	}
 	mux.Handle("GET /api/me", httpx.RequireUser(log, sessions.UserID, sqlc.New(database.Reader()).GetUser, sessions.Destroy)(Me(cfg)))
-	mux.Handle("POST /auth/logout", Logout(sessions))
+	mux.Handle("POST /auth/logout", httpx.LimitBody(httpx.SmallBodyLimit)(Logout(sessions)))
 	google := newGoogleLogin(cfg, log, sessions, database, uploads)
 	mux.HandleFunc("GET /auth/google/start", google.start)
 	mux.HandleFunc("GET /auth/google/callback", google.callback)

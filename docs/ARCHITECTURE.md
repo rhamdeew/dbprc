@@ -48,6 +48,20 @@ All env vars are read in `backend/internal/config`. The list is in `AGENTS.md`. 
 
 Sessions are server-side (`alexedwards/scs` + the `sessions` table). The cookie is `SESSION_COOKIE` (default `arc_sid`): HttpOnly, SameSite=Lax, Secure unless `APP_ENV=dev`, 30-day absolute lifetime, 7-day idle timeout. `GET /api/me` returns the signed-in user and `isAdmin` when the email is in `ADMIN_EMAILS`. Mutating requests must send `Origin` equal to the origin of `APP_BASE_URL` (or, when `Origin` is absent, `Sec-Fetch-Site: same-origin`).
 
+`STATIC_DIR` is read only for dev and test (`Load` rejects it for staging and prod). When it is set, the API serves that directory as the frontend: a real file is returned as-is, and any other GET or HEAD that is not `/healthz`, `/api`, `/auth`, or `/ws` falls back to `index.html`. In that same mode `GET /uploads/` serves `UPLOAD_DIR`, which stands in for the web container's file server. `make e2e` sets it to the Vite build so Playwright can run without Docker. Production leaves `STATIC_DIR` empty.
+
 Sign-in is Google OIDC: `GET /auth/google/start` redirects to the issuer with PKCE, nonce, and `hd=ALLOWED_DOMAIN`. `GET /auth/google/callback` checks the ID token (`coreos/go-oidc`: audience, issuer, nonce) and accepts it only when `email_verified` is true and `hd` equals `ALLOWED_DOMAIN` (the claim, not the authorize URL). The user is upserted by `sub` (email, name, `last_login_at`). The first login stores `picture` as the avatar through `internal/upload` when the download works. The browser is sent to `next` only when that value is a path starting with `/` and not `//`; otherwise `/`. Failures redirect to `/login?error=domain|unverified|state|provider`. State, nonce, and the PKCE verifier sit in the `arc_oidc` cookie for 10 minutes.
 
 `make dev` also starts `backend/cmd/mockoidc` on 127.0.0.1:9999. The issuer is `http://localhost:9999/oidc` (mockoidc's fixed base path). `.env.dev.example` sets `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `ALLOWED_DOMAIN` for that process, and `APP_BASE_URL` to vite's origin (`http://localhost:5173`).
+
+## Chat encryption at rest
+
+`MESSAGE_KEY` is required in every environment: base64 of exactly 32 random bytes. Optional `MESSAGE_KEY_OLD` has the same format. `internal/msgcrypt` uses AES-256-GCM with a fresh 12-byte nonce per message and the decimal chat id as additional authenticated data. `messages.body` stores `v1:` followed by base64(nonce + ciphertext + tag), for text and system messages. Writes use the current key; reads try current then old. API responses, chat previews and WebSocket events contain decrypted text. A damaged, plaintext or otherwise unreadable row becomes `[message unavailable]`; logs contain only message/chat ids. Existing rows are not migrated. Wall posts remain plaintext.
+
+This is server-side encryption, not end-to-end: the API can read chats. Keys stay outside SQLite and backups; staging and prod use different keys. Missing or malformed keys fail startup. Losing all copies of a key loses the messages encrypted with it. See `docs/OPERATIONS.md` for key storage, rotation and restores.
+
+## Encrypted backups
+
+A profiled `backup` service mounts data and uploads read-only, uses SQLite `VACUUM INTO` for a consistent DB snapshot, and sends encrypted restic snapshots to R2 at 03:00 UTC in staging and prod. Retention is 7 daily, 4 weekly, 6 monthly snapshots. Upload files are copied live (there is no cross-volume transaction with the database). Production deploy takes a backup after pulling images and before switching.
+
+Compose/scripts consume `RESTIC_REPOSITORY`, `RESTIC_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional `BACKUP_PING_URL`; these are not API configuration. The deploy workflow maps AWS credentials from the `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` environment secrets. Empty repository disables the `backup` profile. A host restore command validates the snapshot before stopping API, then uses explicit read-write volume overrides to replace DB/uploads and restarts API.

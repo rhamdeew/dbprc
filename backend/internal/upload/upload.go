@@ -43,6 +43,7 @@ const (
 )
 
 var (
+	ErrInvalidImage    = errors.New("invalid image")
 	ErrTooLarge        = errors.New("image exceeds 10MB")
 	ErrDimensions      = errors.New("image dimensions exceed 8000")
 	ErrUnsupportedType = errors.New("unsupported image type")

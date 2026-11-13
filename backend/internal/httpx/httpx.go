@@ -88,3 +88,26 @@ func RequireUser(
 		})
 	}
 }
+
+// RequireAdmin allows the request only when the session user's email is an admin.
+//
+// Anyone else, including a request with no user in the context, gets 404
+// {"code":"not_found"}. That is the same status as an unknown route, so the
+// handler does not tell a non-admin that the endpoint exists. Call it inside
+// RequireUser. isAdmin is typically config.Config.IsAdmin; a nil predicate
+// allows nobody.
+func RequireAdmin(isAdmin func(email string) bool) func(http.Handler) http.Handler {
+	if isAdmin == nil {
+		isAdmin = func(string) bool { return false }
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user, ok := UserFrom(r.Context())
+			if !ok || !isAdmin(user.Email) {
+				WriteError(w, http.StatusNotFound, "not_found", "Not found.")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}

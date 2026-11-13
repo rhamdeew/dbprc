@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
@@ -21,11 +22,14 @@ const DefaultOIDCIssuer = "https://accounts.google.com"
 
 // Config holds runtime settings. Add new fields here; read them only in Load.
 type Config struct {
+	MessageKey       []byte // decoded AES-256 key; required in every environment
+	MessageKeyOld    []byte // optional previous key for reads during rotation
 	Env              string // dev | test | staging | prod
 	Port             int
 	Version          string
 	DataDir          string // SQLite and other local state; file is DataDir/arc.db
 	UploadDir        string // image files written by internal/upload
+	StaticDir        string // built frontend; dev and test only. Empty in staging and prod
 	AppBaseURL       string // public origin the browser uses; CSRF compares Origin to it
 	SessionCookie    string // session cookie name
 	AdminEmails      []string
@@ -47,6 +51,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Version:          Version,
 		DataDir:          valueOr(getenv("DATA_DIR"), "./data"),
 		UploadDir:        valueOr(getenv("UPLOAD_DIR"), "./uploads"),
+		StaticDir:        strings.TrimSpace(getenv("STATIC_DIR")),
 		SessionCookie:    valueOr(strings.TrimSpace(getenv("SESSION_COOKIE")), DefaultSessionCookie),
 		AdminEmails:      splitEmails(getenv("ADMIN_EMAILS")),
 		OIDCIssuer:       issuer,
@@ -74,6 +79,22 @@ func Load(getenv func(string) string) (Config, error) {
 	case "dev", "test", "staging", "prod":
 	default:
 		return Config{}, fmt.Errorf("invalid APP_ENV %q", cfg.Env)
+	}
+	// The web container serves the frontend in staging and prod. STATIC_DIR
+	// would skip that and the Basic Auth in front of it.
+	if cfg.StaticDir != "" && cfg.Env != "dev" && cfg.Env != "test" {
+		return Config{}, fmt.Errorf("STATIC_DIR is only allowed when APP_ENV is dev or test")
+	}
+	key, err := messageKey(getenv("MESSAGE_KEY"))
+	if err != nil {
+		return Config{}, fmt.Errorf("MESSAGE_KEY must be base64 of exactly 32 bytes")
+	}
+	cfg.MessageKey = key
+	if raw := getenv("MESSAGE_KEY_OLD"); raw != "" {
+		cfg.MessageKeyOld, err = messageKey(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("MESSAGE_KEY_OLD must be base64 of exactly 32 bytes")
+		}
 	}
 	return cfg, nil
 }
@@ -168,4 +189,12 @@ func oidcIssuer(raw string) (string, error) {
 		return "", fmt.Errorf("invalid OIDC_ISSUER %q", raw)
 	}
 	return issuer, nil
+}
+
+func messageKey(raw string) ([]byte, error) {
+	key, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil || len(key) != 32 {
+		return nil, fmt.Errorf("invalid message key")
+	}
+	return key, nil
 }

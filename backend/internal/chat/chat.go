@@ -17,16 +17,16 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/db"
 	"github.com/rhamdeew/dbprc/backend/internal/db/sqlc"
 	"github.com/rhamdeew/dbprc/backend/internal/httpx"
+	"github.com/rhamdeew/dbprc/backend/internal/msgcrypt"
 	"github.com/rhamdeew/dbprc/backend/internal/session"
 	"github.com/rhamdeew/dbprc/backend/internal/upload"
 )
 
 const (
 	// maxBodyRunes is the limit after trimming. "4000 chars" counts characters, not bytes.
-	maxBodyRunes  = 4000
-	defaultLimit  = 50
-	maxLimit      = 100
-	jsonBodyLimit = 32 << 10
+	maxBodyRunes = 4000
+	defaultLimit = 50
+	maxLimit     = 100
 
 	kindText   = "text"
 	kindSystem = "system"
@@ -44,7 +44,7 @@ type Chat struct {
 	LastMessageAt string
 }
 
-// Message is one stored line. SenderID is nil for a system line.
+// Message is a decrypted domain line. SenderID is nil for a system line.
 type Message struct {
 	ID        int64
 	ChatID    int64
@@ -113,6 +113,7 @@ type readJSON struct {
 }
 
 type handlers struct {
+	crypt    *msgcrypt.Cipher
 	log      *slog.Logger
 	db       *db.DB
 	notifier Notifier
@@ -121,21 +122,24 @@ type handlers struct {
 // Routes registers the chat endpoints. Each one requires a session.
 // The caller wraps the mux with session LoadAndSave and CSRF.
 // A nil notifier is NopNotifier.
-func Routes(mux *http.ServeMux, log *slog.Logger, sessions *session.Manager, database *db.DB, notifier Notifier) {
+func Routes(mux *http.ServeMux, log *slog.Logger, sessions *session.Manager, database *db.DB, notifier Notifier, crypt *msgcrypt.Cipher) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
 	if notifier == nil {
 		notifier = NopNotifier{}
 	}
-	h := &handlers{log: log, db: database, notifier: notifier}
+	h := &handlers{log: log, db: database, notifier: notifier, crypt: crypt}
 	guard := httpx.RequireUser(log, sessions.UserID, sqlc.New(database.Reader()).GetUser, sessions.Destroy)
-	mux.Handle("PUT /api/me/availability", guard(http.HandlerFunc(h.putAvailability)))
-	mux.Handle("POST /api/chats/random", guard(http.HandlerFunc(h.random)))
+	// Per signed-in user, per minute. Invalid bodies count; an oversized body does not.
+	randomLimit := httpx.NewLimiter(10, time.Minute)
+	messageLimit := httpx.NewLimiter(60, time.Minute)
+	mux.Handle("PUT /api/me/availability", guard(httpx.LimitBody(httpx.JSONBodyLimit)(http.HandlerFunc(h.putAvailability))))
+	mux.Handle("POST /api/chats/random", guard(httpx.LimitBody(httpx.SmallBodyLimit)(httpx.RateLimit(randomLimit)(http.HandlerFunc(h.random)))))
 	mux.Handle("GET /api/chats", guard(http.HandlerFunc(h.list)))
 	mux.Handle("GET /api/chats/{id}/messages", guard(http.HandlerFunc(h.listMessages)))
-	mux.Handle("POST /api/chats/{id}/messages", guard(http.HandlerFunc(h.postMessage)))
-	mux.Handle("POST /api/chats/{id}/read", guard(http.HandlerFunc(h.markRead)))
+	mux.Handle("POST /api/chats/{id}/messages", guard(httpx.LimitBody(httpx.JSONBodyLimit)(httpx.RateLimit(messageLimit)(http.HandlerFunc(h.postMessage)))))
+	mux.Handle("POST /api/chats/{id}/read", guard(httpx.LimitBody(httpx.JSONBodyLimit)(http.HandlerFunc(h.markRead))))
 }
 
 func (h *handlers) putAvailability(w http.ResponseWriter, r *http.Request) {
@@ -216,7 +220,7 @@ func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]chatJSON, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, toChatJSON(row))
+		out = append(out, h.toChatJSON(row))
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 }
@@ -273,7 +277,7 @@ func (h *handlers) listMessages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	page, err := listMessagePage(r.Context(), q, chatID, before, hasBefore, limit)
+	page, err := h.listMessagePage(r.Context(), q, chatID, before, hasBefore, limit)
 	if err != nil {
 		h.log.Error("list messages", "err", err, "chat_id", chatID, "user_id", me.ID)
 		httpx.WriteError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
@@ -381,7 +385,7 @@ func (h *handlers) insertMessage(ctx context.Context, userID, chatID int64, raw 
 		ChatID:    chatID,
 		SenderID:  &sender,
 		Kind:      kindText,
-		Body:      text,
+		Body:      h.crypt.Encrypt(chatID, text),
 		CreatedAt: now,
 	})
 	if err != nil {
@@ -393,7 +397,7 @@ func (h *handlers) insertMessage(ctx context.Context, userID, chatID int64, raw 
 	if err := tx.Commit(); err != nil {
 		return sqlc.Message{}, sqlc.Chat{}, "", "", err
 	}
-	return stored, chatRow, "", "", nil
+	return h.decryptMessage(stored), chatRow, "", "", nil
 }
 
 // advanceRead moves the cursor when messageID is newer. status 400 means the
@@ -447,7 +451,7 @@ func loadMember(ctx context.Context, q *sqlc.Queries, chatID, userID int64) (sql
 	return row, nil
 }
 
-func listMessagePage(ctx context.Context, q *sqlc.Queries, chatID, before int64, hasBefore bool, limit int64) ([]messageJSON, error) {
+func (h *handlers) listMessagePage(ctx context.Context, q *sqlc.Queries, chatID, before int64, hasBefore bool, limit int64) ([]messageJSON, error) {
 	var (
 		rows []sqlc.Message
 		err  error
@@ -462,15 +466,15 @@ func listMessagePage(ctx context.Context, q *sqlc.Queries, chatID, before int64,
 	}
 	out := make([]messageJSON, 0, len(rows))
 	for i := len(rows) - 1; i >= 0; i-- {
-		out = append(out, toMessageJSON(rows[i]))
+		out = append(out, toMessageJSON(h.decryptMessage(rows[i])))
 	}
 	return out, nil
 }
 
-func toChatJSON(row sqlc.ListChatsForUserRow) chatJSON {
+func (h *handlers) toChatJSON(row sqlc.ListChatsForUserRow) chatJSON {
 	var last *lastMessageJSON
 	if row.LastBody != nil && row.LastKind != nil && row.LastCreatedAt != nil {
-		last = &lastMessageJSON{Body: *row.LastBody, Kind: *row.LastKind, CreatedAt: *row.LastCreatedAt}
+		last = &lastMessageJSON{Body: h.crypt.Body(h.log, *row.LastMessageID, row.ID, *row.LastBody), Kind: *row.LastKind, CreatedAt: *row.LastCreatedAt}
 	}
 	return chatJSON{
 		ID:          row.ID,
@@ -520,8 +524,13 @@ func avatarURL(path *string) *string {
 }
 
 func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, jsonBodyLimit))
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, httpx.JSONBodyLimit))
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			httpx.WriteError(w, http.StatusBadRequest, "too_large", "Request body is too large.")
+			return nil, false
+		}
 		httpx.WriteError(w, http.StatusBadRequest, "invalid", "Check the request and try again.")
 		return nil, false
 	}
@@ -606,4 +615,9 @@ func boolInt(v bool) int64 {
 
 func nowRFC3339() string {
 	return time.Now().UTC().Format(time.RFC3339)
+}
+
+func (h *handlers) decryptMessage(row sqlc.Message) sqlc.Message {
+	row.Body = h.crypt.Body(h.log, row.ID, row.ChatID, row.Body)
+	return row
 }

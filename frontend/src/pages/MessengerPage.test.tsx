@@ -50,6 +50,41 @@ function push(data: unknown) {
   client.send(typeof data === 'string' ? data : JSON.stringify(data));
 }
 
+type PostedNotification = {
+  title: string;
+  body: string;
+  onclick: ((event: Event) => void) | null;
+  close: ReturnType<typeof vi.fn>;
+};
+
+function installNotification(permission: NotificationPermission, next: NotificationPermission = 'granted') {
+  const posted: PostedNotification[] = [];
+  const requestPermission = vi.fn(async () => next);
+  class FakeNotification {
+    static permission = permission;
+    static requestPermission = requestPermission;
+    title: string;
+    body: string;
+    onclick: ((event: Event) => void) | null = null;
+    close = vi.fn();
+    constructor(title: string, options?: { body?: string }) {
+      this.title = title;
+      this.body = options?.body ?? '';
+      posted.push(this);
+    }
+  }
+  vi.stubGlobal('Notification', FakeNotification);
+  return { posted, requestPermission };
+}
+
+function setDocumentHidden(hidden: boolean) {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+}
+
+function restoreDocumentHidden() {
+  Reflect.deleteProperty(document, 'hidden');
+}
+
 describe('messenger', () => {
   beforeEach(() => {
     clients.length = 0;
@@ -66,6 +101,9 @@ describe('messenger', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    restoreDocumentHidden();
+    document.title = '';
   });
 
   it('starts a random chat and opens it', async () => {
@@ -363,6 +401,39 @@ describe('messenger', () => {
     expect(screen.getAllByRole('link', { name: /Grace Hopper|Alan Turing|Linus Torvalds/ })).toHaveLength(3);
   });
 
+  it('keeps an open hidden thread unread and acknowledges the latest message on return', async () => {
+    setDocumentHidden(true);
+    const reads: unknown[] = [];
+    server.use(
+      http.get('/api/chats', () => HttpResponse.json([chat(5, 'Grace Hopper', 1, 'earlier')])),
+      http.get('/api/chats/:id/messages', () => HttpResponse.json({ messages: [line(3, 'earlier')] })),
+      http.post('/api/chats/:id/read', async ({ request }) => {
+        const body = await request.json();
+        reads.push(body);
+        return HttpResponse.json(body);
+      }),
+    );
+    renderAt('/messenger/5');
+    await screen.findByRole('log', { name: 'Messages' });
+    await waitFor(() => expect(document.title).toBe('(1) ARC'));
+    await waitFor(() => expect(clients.length).toBeGreaterThan(0));
+
+    for (const id of [4, 5]) {
+      act(() => push({ type: 'message.new', data: { chatId: 5, message: line(id, `hidden ${id}`) } }));
+      await waitFor(() => expect(document.title).toBe(`(${id - 2}) ARC`));
+      expect(screen.getByLabelText(`${id - 2} unread`)).toBeInTheDocument();
+      expect(reads).toEqual([]);
+    }
+
+    act(() => {
+      setDocumentHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(reads).toEqual([{ lastMessageId: 5 }]));
+    await waitFor(() => expect(document.title).toBe('ARC'));
+    expect(screen.queryByLabelText(/unread/)).not.toBeInTheDocument();
+  });
+
   it('refetches the list and the open thread after the socket reconnects', async () => {
     const waits: number[] = [];
     vi.spyOn(reconnectClock, 'cancel').mockImplementation(() => {});
@@ -431,5 +502,159 @@ describe('messenger', () => {
     renderAt('/messenger/5');
     expect(await screen.findByRole('heading', { name: 'Chat' })).toBeInTheDocument();
     expect(await screen.findByText('Chat not found.')).toBeInTheDocument();
+  });
+
+  it('puts the total unread count in the tab title and restores the previous title', async () => {
+    document.title = 'ARC — Async Random Coffee';
+    let release: (response: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    server.use(http.get('/api/chats', () => pending));
+    const view = renderAt('/messenger');
+
+    expect(await screen.findByRole('heading', { name: 'Messenger' })).toBeInTheDocument();
+    expect(document.title).toBe('ARC — Async Random Coffee');
+
+    await act(async () => {
+      release(HttpResponse.json([chat(5, 'Grace Hopper', 1, 'a'), chat(8, 'Alan Turing', 2, 'b')]));
+    });
+    await waitFor(() => expect(document.title).toBe('(3) ARC'));
+
+    await waitFor(() => expect(clients.length).toBeGreaterThan(0));
+    act(() => {
+      push({
+        type: 'message.new',
+        data: { chatId: 8, message: line(9, 'another', 4) },
+      });
+    });
+    await waitFor(() => expect(document.title).toBe('(4) ARC'));
+
+    view.unmount();
+    expect(document.title).toBe('ARC — Async Random Coffee');
+  });
+
+  it('sets the tab title to ARC when every chat is read, including the open thread', async () => {
+    document.title = 'ARC — Async Random Coffee';
+    server.use(
+      http.get('/api/chats', () => HttpResponse.json([chat(5, 'Grace Hopper', 2, 'earlier'), chat(8, 'Alan Turing', 0, 'hey')])),
+      http.get('/api/chats/:id/messages', () => HttpResponse.json({ messages: [line(3, 'earlier')] })),
+    );
+    renderAt('/messenger/5');
+    await waitFor(() => expect(document.title).toBe('ARC'));
+  });
+
+  it('does not offer notifications when the browser has none', async () => {
+    renderAt('/messenger');
+    expect(await screen.findByRole('heading', { name: 'Messenger' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enable notifications' })).not.toBeInTheDocument();
+  });
+
+  it('requests notification permission only from the enable button, then hides it', async () => {
+    const user = userEvent.setup();
+    const denied = installNotification('default', 'denied');
+    const first = renderAt('/messenger');
+    const button = await screen.findByRole('button', { name: 'Enable notifications' });
+    expect(denied.requestPermission).not.toHaveBeenCalled();
+
+    await user.click(button);
+    await waitFor(() => expect(denied.requestPermission).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('button', { name: 'Enable notifications' })).not.toBeInTheDocument();
+    first.unmount();
+
+    const granted = installNotification('default', 'granted');
+    renderAt('/messenger');
+    await user.click(await screen.findByRole('button', { name: 'Enable notifications' }));
+    await waitFor(() => expect(granted.requestPermission).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('button', { name: 'Enable notifications' })).not.toBeInTheDocument();
+  });
+
+  it('hides Enable notifications when permission is already granted or denied', async () => {
+    installNotification('granted');
+    const granted = renderAt('/messenger');
+    expect(await screen.findByRole('heading', { name: 'Messenger' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enable notifications' })).not.toBeInTheDocument();
+    granted.unmount();
+
+    const { requestPermission } = installNotification('denied');
+    renderAt('/messenger');
+    expect(await screen.findByRole('heading', { name: 'Messenger' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enable notifications' })).not.toBeInTheDocument();
+    expect(requestPermission).not.toHaveBeenCalled();
+  });
+
+  it('notifies with the partner name and the first 80 characters while the tab is hidden', async () => {
+    const { posted, requestPermission } = installNotification('granted');
+    setDocumentHidden(true);
+    const long = `${'a'.repeat(79)}😀tail`;
+    server.use(http.get('/api/chats', () => HttpResponse.json([chat(5, 'Grace Hopper', 0, 'earlier')])));
+    renderAt('/messenger');
+    expect(await screen.findByRole('link', { name: /Grace Hopper/ })).toBeInTheDocument();
+    await waitFor(() => expect(clients.length).toBeGreaterThan(0));
+    expect(requestPermission).not.toHaveBeenCalled();
+
+    act(() => {
+      push({ type: 'message.new', data: { chatId: 5, message: line(4, 'hi', 3) } });
+    });
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]?.title).toBe('Grace Hopper');
+    expect(posted[0]?.body).toBe('hi');
+
+    act(() => {
+      push({ type: 'message.new', data: { chatId: 5, message: line(5, long, 3) } });
+    });
+    await waitFor(() => expect(posted[1]?.body).toBe(`${'a'.repeat(79)}😀`));
+
+    act(() => {
+      push({ type: 'message.new', data: { chatId: 99, message: line(6, 'missing chat', 3) } });
+      push({ type: 'chat.new', data: chat(11, 'Linus Torvalds', 0, 'y'.repeat(90)) });
+      push({ type: 'chat.new', data: chat(12, 'Katherine Johnson', 0, null) });
+    });
+    await waitFor(() => expect(posted.map((item) => item.title)).toContain('Katherine Johnson'));
+    expect(posted.map((item) => item.body)).not.toContain('missing chat');
+    expect(posted[2]?.title).toBe('Linus Torvalds');
+    expect(posted[2]?.body).toBe('y'.repeat(80));
+    expect(posted[3]?.title).toBe('Katherine Johnson');
+    expect(posted[3]?.body).toBe('');
+
+    setDocumentHidden(false);
+    act(() => {
+      push({ type: 'message.new', data: { chatId: 5, message: line(7, 'visible now', 3) } });
+      push({ type: 'chat.new', data: chat(13, 'Edsger Dijkstra', 0, 'nope') });
+    });
+    expect(await screen.findByText('visible now')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /Edsger Dijkstra/ })).toBeInTheDocument();
+    expect(posted).toHaveLength(4);
+    expect(requestPermission).not.toHaveBeenCalled();
+
+    const note = posted[2];
+    const open = note?.onclick;
+    if (!note || !open) throw new Error('missing notification');
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => {});
+    act(() => {
+      open(new Event('click'));
+    });
+    expect(focus).toHaveBeenCalled();
+    expect(note.close).toHaveBeenCalled();
+    expect(await screen.findByRole('heading', { name: 'Linus Torvalds' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/messenger/11');
+  });
+
+  it('does not notify or ask while permission is still the default', async () => {
+    const { posted, requestPermission } = installNotification('default');
+    setDocumentHidden(true);
+    server.use(http.get('/api/chats', () => HttpResponse.json([chat(5, 'Grace Hopper', 0, 'earlier')])));
+    renderAt('/messenger');
+    expect(await screen.findByRole('button', { name: 'Enable notifications' })).toBeInTheDocument();
+    await waitFor(() => expect(clients.length).toBeGreaterThan(0));
+
+    act(() => {
+      push({ type: 'message.new', data: { chatId: 5, message: line(4, 'hi', 3) } });
+      push({ type: 'chat.new', data: chat(11, 'Linus Torvalds', 0, 'hey') });
+    });
+    expect(await screen.findByText('hi')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /Linus Torvalds/ })).toBeInTheDocument();
+    expect(posted).toHaveLength(0);
+    expect(requestPermission).not.toHaveBeenCalled();
   });
 });

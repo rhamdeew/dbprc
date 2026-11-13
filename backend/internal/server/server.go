@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/rhamdeew/dbprc/backend/internal/admin"
 	"github.com/rhamdeew/dbprc/backend/internal/auth"
 	"github.com/rhamdeew/dbprc/backend/internal/chat"
 	"github.com/rhamdeew/dbprc/backend/internal/config"
 	"github.com/rhamdeew/dbprc/backend/internal/db"
 	"github.com/rhamdeew/dbprc/backend/internal/httpx"
+	"github.com/rhamdeew/dbprc/backend/internal/msgcrypt"
 	"github.com/rhamdeew/dbprc/backend/internal/profile"
 	"github.com/rhamdeew/dbprc/backend/internal/realtime"
 	"github.com/rhamdeew/dbprc/backend/internal/session"
@@ -40,10 +42,16 @@ type Server struct {
 // New builds the root handler. deps.DB is required.
 // GET /healthz, GET /api/version, and GET /auth/google/* are public.
 // GET /api/me, the profile routes (including colleague search), the wall routes,
-// the chat routes, and GET /ws require a session.
+// the chat routes, the admin routes, and GET /ws require a session.
+// Admin routes also require an email in ADMIN_EMAILS; anyone else gets 404.
+// When cfg.StaticDir is set, other GET and HEAD requests serve that directory.
 func New(cfg config.Config, deps Deps) *Server {
 	if deps.DB == nil {
 		panic("server: nil database")
+	}
+	crypt, err := msgcrypt.New(cfg.MessageKey, cfg.MessageKeyOld)
+	if err != nil {
+		panic("server: invalid message key")
 	}
 	log := deps.Log
 	if log == nil {
@@ -69,20 +77,24 @@ func New(cfg config.Config, deps Deps) *Server {
 	auth.Routes(mux, cfg, log, sessions, deps.DB, uploads)
 	profile.Routes(mux, log, sessions, deps.DB, uploads)
 	wall.Routes(mux, log, sessions, deps.DB, uploads)
+	admin.Routes(mux, cfg, log, sessions, deps.DB, uploads)
 
 	notifier := deps.ChatNotifier
 	var hub *realtime.Hub
 	if notifier == nil {
-		hub = realtime.New(deps.DB, log, cfg.AppBaseURL)
+		hub = realtime.New(deps.DB, log, cfg.AppBaseURL, crypt)
 		notifier = hub
 	}
-	chat.Routes(mux, log, sessions, deps.DB, notifier)
+	chat.Routes(mux, log, sessions, deps.DB, notifier, crypt)
 	realtime.Routes(mux, log, sessions, hub)
 
 	var handler http.Handler = mux
 	handler = sessions.LoadAndSave(handler)
 	handler = httpx.CSRF(cfg.AppBaseURL)(handler)
 	handler = logRequests(log, handler)
+	// Outside the session middleware so assets do not touch the database.
+	// No-op unless STATIC_DIR is set (dev and E2E).
+	handler = serveDevStatic(handler, cfg)
 
 	return &Server{handler: handler, sessions: sessions, db: deps.DB, hub: hub}
 }
