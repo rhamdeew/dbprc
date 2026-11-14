@@ -8,4 +8,6 @@ RUN npm run build
 
 FROM caddy:2-alpine
 COPY deploy/env/Caddyfile /etc/caddy/Caddyfile
+COPY deploy/env/validate-caddy.sh /tmp/validate-caddy.sh
+RUN sh /tmp/validate-caddy.sh /etc/caddy/Caddyfile && rm /tmp/validate-caddy.sh
 COPY --from=build /app/dist /srv

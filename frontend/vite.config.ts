@@ -19,7 +19,22 @@ function devUploads(): Plugin {
   return {
     name: 'arc-dev-uploads',
     configureServer(server) {
-      server.middlewares.use('/uploads', (req, res) => {
+      server.middlewares.use('/uploads', async (req, res) => {
+        // Match Caddy forward_auth: authenticate before inspecting or serving files.
+        try {
+          const auth = await fetch(`${api}/api/me`, { headers: { cookie: req.headers.cookie ?? '' }, redirect: 'manual' });
+          for (const cookie of auth.headers.getSetCookie()) res.appendHeader('Set-Cookie', cookie);
+          await auth.body?.cancel();
+          if (!auth.ok) {
+            res.statusCode = auth.status;
+            res.end();
+            return;
+          }
+        } catch {
+          res.statusCode = 502;
+          res.end();
+          return;
+        }
         let rel: string;
         try {
           rel = decodeURIComponent((req.url ?? '').split('?')[0] ?? '');
@@ -34,6 +49,7 @@ function devUploads(): Plugin {
           res.end();
           return;
         }
+        res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
         res.setHeader('Content-Type', uploadTypes[path.extname(file)] ?? 'application/octet-stream');
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Content-Disposition', 'inline');
