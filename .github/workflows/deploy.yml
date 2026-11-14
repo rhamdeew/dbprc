@@ -94,8 +94,8 @@ jobs:
           BACKUP_PING_URL: ${{ secrets.BACKUP_PING_URL }}
         run: |
           case "$ENV_NAME" in
-            prod) WEB_PORT=8081 ;;
-            staging) WEB_PORT=8082 ;;
+            prod) WEB_PORT=8081; BASIC_AUTH_MODE=off ;;
+            staging) WEB_PORT=8082; BASIC_AUTH_MODE=on ;;
             *) echo "unknown env $ENV_NAME"; exit 1 ;;
           esac
           umask 077
@@ -108,6 +108,7 @@ jobs:
             kv WEB_PORT "$WEB_PORT"
             kv APP_ENV "$ENV_NAME"
             kv APP_BASE_URL "https://$APP_HOST"
+            kv BASIC_AUTH_MODE "$BASIC_AUTH_MODE"
             kv BASIC_AUTH_USER "$BASIC_AUTH_USER"
             kv BASIC_AUTH_HASH "$BASIC_AUTH_HASH"
             kv OIDC_CLIENT_ID "$OIDC_CLIENT_ID"
@@ -150,4 +151,6 @@ jobs:
           echo "$body"
           [[ "$body" == *'"version":"${{ github.sha }}"'* ]]
           code="$(curl -s -o /dev/null -w '%{http_code}' "https://${{ vars.APP_HOST }}/")"
-          [[ "$code" == 401 ]] || { echo "expected 401 without Basic Auth, got $code"; exit 1; }
+          expected=401
+          if [[ "${{ github.ref_name }}" == prod ]]; then expected=200; fi
+          [[ "$code" == "$expected" ]] || { echo "expected $expected without Basic Auth, got $code"; exit 1; }

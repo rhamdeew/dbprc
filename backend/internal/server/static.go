@@ -21,31 +21,18 @@ func serveDevStatic(next http.Handler, cfg config.Config) http.Handler {
 	}
 	root := http.Dir(dir)
 	spa := &spaFiles{root: root, files: http.FileServer(root)}
-	var uploads http.Handler
-	if strings.TrimSpace(cfg.UploadDir) != "" {
-		uploadRoot := http.Dir(cfg.UploadDir)
-		uploads = &uploadFiles{
-			root:  uploadRoot,
-			files: http.StripPrefix("/uploads/", http.FileServer(uploadRoot)),
-		}
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if appPath(r.URL.Path) {
+		if appPath(r.URL.Path) || uploadPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
 		// Same browser policy as deploy/env/Caddyfile, so dev and E2E run under it.
 		// HSTS stays on Caddy: this server is plain HTTP.
 		setSecurityHeaders(w, r)
-		if uploads != nil && uploadPath(r.URL.Path) {
-			w.Header().Set("Content-Disposition", "inline")
-			uploads.ServeHTTP(w, r)
-			return
-		}
 		spa.ServeHTTP(w, r)
 	})
 }
@@ -114,13 +101,15 @@ type uploadFiles struct {
 }
 
 func (h *uploadFiles) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	setSecurityHeaders(w, r)
+	w.Header().Set("Content-Disposition", "inline")
 	rel := strings.TrimPrefix(path.Clean(r.URL.Path), "/uploads")
 	rel = strings.TrimPrefix(rel, "/")
 	if rel == "" || rel == "." || !regularFile(h.root, rel) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	h.files.ServeHTTP(w, r)
 }
 
