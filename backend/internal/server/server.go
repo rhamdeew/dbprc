@@ -13,6 +13,7 @@ import (
 	"github.com/rhamdeew/dbprc/backend/internal/chat"
 	"github.com/rhamdeew/dbprc/backend/internal/config"
 	"github.com/rhamdeew/dbprc/backend/internal/db"
+	"github.com/rhamdeew/dbprc/backend/internal/db/sqlc"
 	"github.com/rhamdeew/dbprc/backend/internal/httpx"
 	"github.com/rhamdeew/dbprc/backend/internal/msgcrypt"
 	"github.com/rhamdeew/dbprc/backend/internal/profile"
@@ -90,12 +91,23 @@ func New(cfg config.Config, deps Deps) *Server {
 	chat.Routes(mux, log, sessions, deps.DB, notifier, crypt)
 	realtime.Routes(mux, log, sessions, hub)
 
+	if cfg.StaticDir != "" {
+		files := http.NotFoundHandler()
+		if cfg.UploadDir != "" {
+			root := http.Dir(cfg.UploadDir)
+			files = &uploadFiles{root: root, files: http.StripPrefix("/uploads/", http.FileServer(root))}
+		}
+		requireUser := httpx.RequireUser(log, sessions.UserID, sqlc.New(deps.DB.Reader()).GetUser, sessions.Destroy)
+		mux.Handle("GET /uploads/", requireUser(files))
+		mux.Handle("GET /uploads", requireUser(files))
+	}
+
 	var handler http.Handler = mux
 	handler = sessions.LoadAndSave(handler)
 	handler = httpx.CSRF(cfg.AppBaseURL)(handler)
 	handler = logRequests(log, handler)
 	handler = recoverPanics(log, handler)
-	// Outside the session middleware so assets do not touch the database.
+	// SPA assets bypass sessions; upload paths return to the authenticated mux.
 	// No-op unless STATIC_DIR is set (dev and E2E).
 	handler = serveDevStatic(handler, cfg)
 

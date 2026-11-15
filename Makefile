@@ -85,3 +85,7 @@ test-backup-deploy:
 
 test-backup: test-backup-deploy ## real restic/SQLite round trip in Docker (no R2 credentials)
 	deploy/backup/test.sh
+
+.PHONY: lint-web
+lint-web:        ## validate Caddy with Basic Auth on, off, empty, invalid and unset (CADDY overrides binary)
+	sh deploy/env/validate-caddy.sh

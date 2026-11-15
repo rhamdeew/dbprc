@@ -4,10 +4,13 @@ ARC is an internal app for about 300 colleagues. Each environment has one API pr
 
 ## Gate
 
-Internet traffic terminates TLS on the edge Caddy. The environment Caddy (`deploy/env/Caddyfile`) then requires Basic Auth on every path except `/healthz` and `/ws`. That password is shared for the whole environment. It keeps the site off the public internet. It does not say who the caller is.
+Internet traffic terminates TLS on the edge Caddy. The environment Caddy (`deploy/env/Caddyfile`) uses `BASIC_AUTH_MODE`: only the exact value `off` disables Basic Auth. Missing, empty, or unexpected values keep it on. Deploy writes `off` for prod and `on` for staging. The shared Basic Auth credentials do not identify the caller and remain configured in both environments.
 
-`/ws` is outside Basic Auth because browsers do not reliably send those credentials on a WebSocket handshake (Safari does not), which would leave the messenger without live updates. The API answers 401 before the upgrade when the session cookie is missing, and 403 when `Origin` is not the app's own host. A session cookie can only be obtained through `/auth/*`, which is behind Basic Auth.
+With Basic Auth off, the SPA bundle (including `/` and `/login`), `/healthz`, `/api/version`, and `/auth/google/*` are public. All other `/api/*`, `/ws`, and `/uploads/*` require a valid app session. Staging adds Basic Auth on every path except `/healthz` and `/ws`.
 
+`/ws` is outside Basic Auth because browsers do not reliably send those credentials on a WebSocket handshake (Safari does not). The API answers 401 before the upgrade when the session cookie is missing, and 403 when `Origin` is not the app's own host.
+
+Before serving any upload, Caddy uses `forward_auth` against `GET /api/me`. A missing or invalid session returns 401 with no file bytes; API errors or unavailability also prevent file serving. Successful uploads use `Cache-Control: private, max-age=31536000, immutable`, so shared caches must not store them. Dev/E2E static serving and Vite's dev upload handler perform the same session check. Private browser caches can retain an already fetched immutable image; this is an access check on requests, not revocation of previously downloaded copies.
 Identity is Google only. `GET /auth/google/callback` accepts an ID token when the audience and issuer match, the nonce matches, `email_verified` is true, and the `hd` claim equals `ALLOWED_DOMAIN`. The `hd` on the authorize URL is not the check. There are no passwords. The first accepted login creates the account. Name and email change only on a later login.
 
 The session cookie (`arc_sid`) is HttpOnly and SameSite=Lax, and Secure outside dev. It is an opaque server-side token. A mutating request must send `Origin` equal to `APP_BASE_URL`, or, when `Origin` is absent, `Sec-Fetch-Site: same-origin`.

@@ -5,7 +5,7 @@
 | Topic | Rule |
 |---|---|
 | Identity | Sign in with Google only. Accept ID tokens with `hd == ALLOWED_DOMAIN` and `email_verified == true` (checked server-side from the token claims). Account is created on first login. Name + avatar come from Google; the name is not editable. No passwords. |
-| Gate | Basic Auth in front of everything (per environment) + company Google domain. `/healthz` and `/ws` are exempt from Basic Auth (`/ws` still needs a session cookie and the app's own `Origin`; see `docs/SECURITY.md`). |
+| Gate | Company Google domain; staging also has Basic Auth. Prod sets `BASIC_AUTH_MODE=off`; only exact `off` disables it, all other values keep it on. `/healthz` and `/ws` are exempt from Basic Auth (`/ws` still needs a session cookie and the app's own `Origin`; see `docs/SECURITY.md`). |
 | Profile | Avatar, interests (hobby, music, movies, other), up to 5 extra photos shown in a lightbox. |
 | Wall | Anyone can post on anyone's wall: text and/or a drawing. Replies are 2 levels max (a reply to a reply attaches to the root). The wall owner can delete any post on their wall. |
 | Anonymous posts | Author is stored. It is visible **only to the wall owner**; everyone else sees "Anonymous". The poster is warned about this in the UI. |
@@ -25,7 +25,7 @@ edge Caddy (root, /opt/arc-edge on the VPS; TLS via Let's Encrypt)
    └─ starc.dbdemo.live → 127.0.0.1:8082   staging  (Linux user staging, ~/arc)
 
 per environment (deploy/env/compose.yml, project arc-<env>)
-   web : Caddy + built frontend; Basic Auth; serves /uploads; proxies /api /auth /ws /healthz to api
+   web : Caddy + built frontend; optional Basic Auth; session-authorized /uploads; proxies /api /auth /ws /healthz to api
    api : Go binary, SQLite in volume `data`, files in volume `uploads`
 ```
 
@@ -44,11 +44,11 @@ The deploy workflow builds images, renders `.env` from the GitHub Environment se
 
 ## Configuration
 
-All env vars are read in `backend/internal/config`. The list is in `AGENTS.md`. The API opens `$DATA_DIR/arc.db` (default directory `./data`) in WAL mode with foreign keys on. `deploy/env/compose.yml` already sets `DATA_DIR=/data`. Images are stored under `$UPLOAD_DIR` (default `./uploads`; compose sets `/uploads`) by `internal/upload` and served by the web container, not by the API.
+API env vars are read in `backend/internal/config`. Web-only `BASIC_AUTH_MODE` is consumed by Compose/Caddy; deploy writes `off` for prod and `on` for staging. The list is in `AGENTS.md`. The API opens `$DATA_DIR/arc.db` (default directory `./data`) in WAL mode with foreign keys on. `deploy/env/compose.yml` already sets `DATA_DIR=/data`. Images are stored under `$UPLOAD_DIR` (default `./uploads`; compose sets `/uploads`) by `internal/upload` and served by the web container, not by the API.
 
 Sessions are server-side (`alexedwards/scs` + the `sessions` table). The cookie is `SESSION_COOKIE` (default `arc_sid`): HttpOnly, SameSite=Lax, Secure unless `APP_ENV=dev`, 30-day absolute lifetime, 7-day idle timeout. `GET /api/me` returns the signed-in user and `isAdmin` when the email is in `ADMIN_EMAILS`. Mutating requests must send `Origin` equal to the origin of `APP_BASE_URL` (or, when `Origin` is absent, `Sec-Fetch-Site: same-origin`).
 
-`STATIC_DIR` is read only for dev and test (`Load` rejects it for staging and prod). When it is set, the API serves that directory as the frontend: a real file is returned as-is, and any other GET or HEAD that is not `/healthz`, `/api`, `/auth`, or `/ws` falls back to `index.html`. In that same mode `GET /uploads/` serves `UPLOAD_DIR`, which stands in for the web container's file server. `make e2e` sets it to the Vite build so Playwright can run without Docker. Production leaves `STATIC_DIR` empty.
+`STATIC_DIR` is read only for dev and test (`Load` rejects it for staging and prod). When it is set, the API serves that directory as the frontend: a real file is returned as-is, and any other GET or HEAD that is not `/healthz`, `/api`, `/auth`, or `/ws` falls back to `index.html`. In that same mode `GET /uploads/` requires a session and serves `UPLOAD_DIR` with private immutable caching, which stands in for the web container's file server. `make e2e` sets it to the Vite build so Playwright can run without Docker. Production leaves `STATIC_DIR` empty.
 
 Sign-in is Google OIDC: `GET /auth/google/start` redirects to the issuer with PKCE, nonce, and `hd=ALLOWED_DOMAIN`. `GET /auth/google/callback` checks the ID token (`coreos/go-oidc`: audience, issuer, nonce) and accepts it only when `email_verified` is true and `hd` equals `ALLOWED_DOMAIN` (the claim, not the authorize URL). The user is upserted by `sub` (email, name, `last_login_at`). The first login stores `picture` as the avatar through `internal/upload` when the download works. The browser is sent to `next` only when that value is a path starting with `/` and not `//`; otherwise `/`. Failures redirect to `/login?error=domain|unverified|state|provider`. State, nonce, and the PKCE verifier sit in the `arc_oidc` cookie for 10 minutes.
 

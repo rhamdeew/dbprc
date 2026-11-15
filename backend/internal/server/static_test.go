@@ -62,9 +62,9 @@ func TestDevStatic(t *testing.T) {
 		{name: "missing asset", method: http.MethodGet, path: "/assets/missing.js", wantStatus: http.StatusNotFound},
 		{name: "healthz stays json", method: http.MethodGet, path: "/healthz", wantStatus: http.StatusOK, wantBody: `"status":"ok"`, wantType: "application/json"},
 		{name: "version stays json", method: http.MethodGet, path: "/api/version", wantStatus: http.StatusOK, wantBody: `"version":"abc123"`, wantType: "application/json"},
-		{name: "upload", method: http.MethodGet, path: "/uploads/photos/a.jpg", wantStatus: http.StatusOK, wantBody: "PHOTO", wantCache: "public, max-age=31536000, immutable"},
-		{name: "upload dir", method: http.MethodGet, path: "/uploads/photos/", wantStatus: http.StatusNotFound},
-		{name: "upload missing", method: http.MethodGet, path: "/uploads/nope.jpg", wantStatus: http.StatusNotFound},
+		{name: "upload", method: http.MethodGet, path: "/uploads/photos/a.jpg", wantStatus: http.StatusUnauthorized, wantBody: `"code":"unauthenticated"`},
+		{name: "upload dir", method: http.MethodGet, path: "/uploads/photos/", wantStatus: http.StatusUnauthorized},
+		{name: "upload missing", method: http.MethodGet, path: "/uploads/nope.jpg", wantStatus: http.StatusUnauthorized},
 		{name: "head asset", method: http.MethodHead, path: "/assets/app.js", wantStatus: http.StatusOK, wantBody: ""},
 		{name: "post unknown", method: http.MethodPost, path: "/login", wantStatus: http.StatusNotFound},
 	}
@@ -113,7 +113,7 @@ func TestDevStatic(t *testing.T) {
 					t.Fatalf("headers %v", resp.Header)
 				}
 			}
-			if tt.path == "/uploads/photos/a.jpg" && resp.Header.Get("Content-Disposition") != "inline" {
+			if tt.path == "/uploads/photos/a.jpg" && tt.wantStatus == http.StatusOK && resp.Header.Get("Content-Disposition") != "inline" {
 				t.Fatalf("disposition %q", resp.Header.Get("Content-Disposition"))
 			}
 			if tt.path == "/healthz" && resp.Header.Get("Content-Security-Policy") != "" {
