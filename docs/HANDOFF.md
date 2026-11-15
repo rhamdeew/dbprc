@@ -43,6 +43,7 @@ Read this before exploring the code. **Update it in your PR** (see "How to updat
 - dbprc2 port: interactive mock Google for `make dev`; `/ws` outside Basic Auth; unread badge and live chats on every page (`components/LiveChats.tsx`); profile `available`; `GET /api/chats/available` and the messenger count line; admin delete also removes drawings of other people's replies under the target's posts; `recoverPanics` + `ms` in the request log; CSP `base-uri`/`form-action`; api `stop_grace_period: 20s`; UI restyle (white page, titled `Panel` strips, `[arc]` wordmark, chat bubbles, day separators).
 
 - ARC-46 access: prod `BASIC_AUTH_MODE=off`, staging `on` (anything except exact `off` enables Basic Auth); Caddy `/uploads/*` uses `/api/me` forward auth, dev/E2E + Vite also require a session; private immutable upload caching. Web image validates all switch modes in CI.
+- Deploy config: the VPS address, SSH port and app hostname are environment secrets (`SSH_HOST`, `SSH_PORT`, `APP_HOST`), not variables, and are never written in the repo; `deploy/setup-github.sh` and `deploy/provision.sh` take them from env vars. Only `SSH_USER` stays a variable.
 
 ## Code map
 

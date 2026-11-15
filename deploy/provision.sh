@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ARC VPS provisioning. Idempotent. Run as root:
-#   ssh root@ddr1 'bash -s' < deploy/provision.sh
+#   ssh root@<vps> 'PROD_HOST=<prod hostname> STAGING_HOST=<staging hostname> bash -s' < deploy/provision.sh
 set -euo pipefail
 
 PROD_USER=www
 STAGING_USER=staging
 STAGING_HOME=/srv/staging
 EDGE_DIR=/opt/arc-edge
-PROD_HOST=arc.dbdemo.live
-STAGING_HOST=starc.dbdemo.live
+: "${PROD_HOST:?set PROD_HOST to the prod hostname}"
+: "${STAGING_HOST:?set STAGING_HOST to the staging hostname}"
 SSH_PORT="$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}')"
 
 log() { printf '\n==> %s\n' "$*"; }

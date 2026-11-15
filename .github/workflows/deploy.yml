@@ -1,7 +1,8 @@
 name: Deploy
 
-# staging branch → starc.dbdemo.live, prod branch → arc.dbdemo.live.
+# staging branch → staging environment, prod branch → prod environment.
 # Secrets/variables live in the GitHub Environment named after the branch (see deploy/setup-github.sh).
+# The VPS address, SSH port and app hostname are secrets so they stay masked in these public logs.
 on:
   push:
     branches: [staging, prod]
@@ -49,9 +50,9 @@ jobs:
   deploy:
     needs: images
     runs-on: ubuntu-latest
+    # No environment url: it would publish the hostname on the deployments page.
     environment:
       name: ${{ github.ref_name }}
-      url: https://${{ vars.APP_HOST }}
     steps:
       - uses: actions/checkout@v5
 
@@ -59,16 +60,20 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ vars.SSH_USER }}
         run: |
+          : "${SSH_HOST:?SSH_HOST secret is not set}" "${SSH_PORT:?SSH_PORT secret is not set}"
           install -d -m 700 ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519
           cat > ~/.ssh/config <<CFG
           Host vps
-            HostName ${{ vars.SSH_HOST }}
-            Port ${{ vars.SSH_PORT }}
-            User ${{ vars.SSH_USER }}
+            HostName $SSH_HOST
+            Port $SSH_PORT
+            User $SSH_USER
             IdentityFile ~/.ssh/id_ed25519
             IdentitiesOnly yes
             BatchMode yes
@@ -77,7 +82,7 @@ jobs:
       - name: Render .env
         env:
           ENV_NAME: ${{ github.ref_name }}
-          APP_HOST: ${{ vars.APP_HOST }}
+          APP_HOST: ${{ secrets.APP_HOST }}
           BASIC_AUTH_USER: ${{ secrets.BASIC_AUTH_USER }}
           BASIC_AUTH_HASH: ${{ secrets.BASIC_AUTH_HASH }}
           OIDC_CLIENT_ID: ${{ secrets.OIDC_CLIENT_ID }}
@@ -93,6 +98,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           BACKUP_PING_URL: ${{ secrets.BACKUP_PING_URL }}
         run: |
+          : "${APP_HOST:?APP_HOST secret is not set}"
           case "$ENV_NAME" in
             prod) WEB_PORT=8081; BASIC_AUTH_MODE=off ;;
             staging) WEB_PORT=8082; BASIC_AUTH_MODE=on ;;
@@ -146,11 +152,13 @@ jobs:
           exit $rc
 
       - name: Smoke test through the edge
+        env:
+          APP_HOST: ${{ secrets.APP_HOST }}
         run: |
-          body="$(curl -fsS --retry 5 --retry-delay 3 "https://${{ vars.APP_HOST }}/healthz")"
+          body="$(curl -fsS --retry 5 --retry-delay 3 "https://$APP_HOST/healthz")"
           echo "$body"
           [[ "$body" == *'"version":"${{ github.sha }}"'* ]]
-          code="$(curl -s -o /dev/null -w '%{http_code}' "https://${{ vars.APP_HOST }}/")"
+          code="$(curl -s -o /dev/null -w '%{http_code}' "https://$APP_HOST/")"
           expected=401
           if [[ "${{ github.ref_name }}" == prod ]]; then expected=200; fi
           [[ "$code" == "$expected" ]] || { echo "expected $expected without Basic Auth, got $code"; exit 1; }
