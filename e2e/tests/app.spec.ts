@@ -88,6 +88,26 @@ test.afterAll(async () => {
   await bobContext?.close();
 });
 
+test('avatar loads with a session and rejects a fresh context', async ({ browser }) => {
+  await alicePage.getByLabel('Profile photo', { exact: true }).setInputFiles(path.join(process.cwd(), 'fixtures', 'photo.png'));
+  const avatar = alicePage.getByRole('img', { name: 'Alice Arc, profile photo', exact: true });
+  await expect(avatar).toBeVisible();
+  await expect.poll(() => avatar.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  const url = await avatar.getAttribute('src');
+  expect(url).toMatch(/^\/uploads\//);
+  const signedIn = await aliceContext.request.get(url!);
+  expect(signedIn.status()).toBe(200);
+  expect(signedIn.headers()['cache-control']).toContain('private, max-age=31536000, immutable');
+  const fresh = await browser.newContext();
+  try {
+    const response = await fresh.request.get(new URL(url!, alicePage.url()).href);
+    expect(response.status()).toBe(401);
+    expect(await response.json()).toMatchObject({ code: 'unauthenticated' });
+  } finally {
+    await fresh.close();
+  }
+});
+
 test('mobile shell controls fit and work with the keyboard before and after reload', async () => {
   await checkMobileShell(alicePage, alice.name);
 });
