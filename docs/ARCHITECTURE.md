@@ -21,8 +21,8 @@
 Internet :80/:443
    │
 edge Caddy (root, /opt/arc-edge on the VPS; TLS via Let's Encrypt)
-   ├─ arc.dbdemo.live   → 127.0.0.1:8081   prod     (Linux user www,     ~/arc)
-   └─ starc.dbdemo.live → 127.0.0.1:8082   staging  (Linux user staging, ~/arc)
+   ├─ <prod host>      → 127.0.0.1:8081   prod     (Linux user www,     ~/arc)
+   └─ <staging host>   → 127.0.0.1:8082   staging  (Linux user staging, ~/arc)
 
 per environment (deploy/env/compose.yml, project arc-<env>)
    web : Caddy + built frontend; optional Basic Auth; session-authorized /uploads; proxies /api /auth /ws /healthz to api
@@ -37,8 +37,8 @@ per environment (deploy/env/compose.yml, project arc-<env>)
 | Branch | Role | Deploys to |
 |---|---|---|
 | `main` | Integration. Task PRs merge here when CI is green. | nothing |
-| `staging` | Batch PR `main → staging`, merged by a human. | starc.dbdemo.live |
-| `prod` | PR `staging → prod`, merged by a human (deploy also needs approval). | arc.dbdemo.live |
+| `staging` | Batch PR `main → staging`, merged by a human. | staging (`APP_HOST` secret) |
+| `prod` | PR `staging → prod`, merged by a human (deploy also needs approval). | prod (`APP_HOST` secret) |
 
 The deploy workflow builds images, renders `.env` from the GitHub Environment secrets, uploads `compose.yml`, and runs `deploy/env/deploy.sh` on the VPS. That script pulls first, switches, waits until `/healthz` reports the new version, and otherwise rolls back to the previous version.
 
