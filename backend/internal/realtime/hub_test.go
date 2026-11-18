@@ -43,7 +43,7 @@ func TestOriginPatterns(t *testing.T) {
 		in   string
 		want string
 	}{
-		{in: "https://arc.dbdemo.live", want: "arc.dbdemo.live"},
+		{in: "https://arc.example.com", want: "arc.example.com"},
 		{in: "http://localhost:5173", want: "localhost:5173"},
 		{in: "http://LocalHost:5173/app", want: "localhost:5173"},
 		{in: "https://APP.EXAMPLE:443", want: "app.example:443"},
