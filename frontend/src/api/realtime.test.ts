@@ -19,7 +19,7 @@ describe('realtime helpers', () => {
 
   it('builds a ws url from the page', () => {
     expect(realtimeURL({ protocol: 'http:', host: 'localhost' })).toBe('ws://localhost/ws');
-    expect(realtimeURL({ protocol: 'https:', host: 'arc.dbdemo.live' })).toBe('wss://arc.dbdemo.live/ws');
+    expect(realtimeURL({ protocol: 'https:', host: 'arc.example.com' })).toBe('wss://arc.example.com/ws');
   });
 
   it('parses hub events and ignores anything else', () => {

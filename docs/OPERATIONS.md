@@ -5,11 +5,11 @@
 - **staging:** merge a PR into `staging`. It deploys automatically in about 5 minutes.
 - **prod:** merge a PR `staging → prod`, then approve the deployment in GitHub Actions (the `prod` environment requires approval).
 
-Each deploy: CI → build images → render `.env` → `deploy/env/deploy.sh <sha>` on the VPS → smoke test through the edge (`/healthz` reports the sha, `/` returns 200 on prod and asks for Basic Auth on staging).
+Each deploy: CI → build images → render `.env` → `deploy/env/deploy.sh <sha>` on the VPS → smoke test through the edge (`/healthz` reports the sha, `/` returns 200 on both).
 
 ## Public access and Basic Auth
 
-`BASIC_AUTH_MODE` is a web/Compose setting, not an API setting. Only exact `off` disables Basic Auth; unset, empty, and all other values keep it enabled. Deploy's Render .env step writes `off` for prod and `on` for staging. To change the normal policy, change that environment's assignment in `.github/workflows/deploy.yml`. To flip an existing stack manually, edit `BASIC_AUTH_MODE` in the protected `~/arc/.env` and recreate web with `docker compose up -d web`. The next deploy restores the workflow's policy. Keep `BASIC_AUTH_USER` and `BASIC_AUTH_HASH` secrets in both environments; they remain required configuration even when unused by prod. No edge Caddy change is needed.
+`BASIC_AUTH_MODE` is a web/Compose setting, not an API setting. Only exact `off` disables Basic Auth; unset, empty, and all other values keep it enabled. Deploy's Render .env step writes `off` for both prod and staging. To change the normal policy, change that environment's assignment in `.github/workflows/deploy.yml`. To flip an existing stack manually, edit `BASIC_AUTH_MODE` in the protected `~/arc/.env` and recreate web with `docker compose up -d web`. The next deploy restores the workflow's policy. Keep `BASIC_AUTH_USER` and `BASIC_AUTH_HASH` secrets in both environments; they remain required configuration even when unused by prod. No edge Caddy change is needed.
 
 With the switch off, the SPA bundle (`/`, `/login`, assets), `/healthz`, `/api/version`, and `/auth/google/*` are public. All other `/api/*`, `/ws`, and `/uploads/*` require a session. With it on, Basic Auth additionally gates every path except `/healthz` and `/ws`. `/ws` always requires a session and the app's Origin. Upload requests are authorized through API `/api/me` before Caddy serves bytes, fail closed on API errors, and use private immutable caching. Vite and the dev/E2E static server apply the same session rule.
 
@@ -18,9 +18,9 @@ With the switch off, the SPA bundle (`/`, `/login`, assets), `/healthz`, `/api/v
 ## Check what is running
 
 ```sh
-curl -s https://starc.dbdemo.live/healthz      # {"status":"ok","version":"<sha>"}
-ssh staging@ddr1 'cd ~/arc && cat .current_tag && docker compose ps'
-ssh staging@ddr1 'cd ~/arc && docker compose logs --tail 100 api'
+curl -s https://<staging-host>/healthz      # {"status":"ok","version":"<sha>"}
+ssh staging@<vps> 'cd ~/arc && cat .current_tag && docker compose ps'
+ssh staging@<vps> 'cd ~/arc && docker compose logs --tail 100 api'
 ```
 
 (prod: user `www`)
@@ -93,7 +93,7 @@ The command downloads into a temporary Docker volume and checks SQLite integrity
 1. Use the staging Linux user and `~/arc`, ensuring the Compose project is `arc-staging`. Never run this procedure from the prod directory/user.
 2. Stop staging's cron container: `docker compose stop backup`. Securely copy staging `.env` to `.env.before-restore` (mode 600).
 3. Temporarily edit **staging's** `.env` with a secure editor: set `RESTIC_REPOSITORY`, `RESTIC_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` to the source prod repository credentials. Keep `COMPOSE_PROJECT_NAME`, `APP_ENV`, ports, and other API settings unchanged. To read restored prod chats, temporarily set `MESSAGE_KEY` and, if needed, `MESSAGE_KEY_OLD` to the source snapshot’s message keys from the password manager. These are sensitive prod credentials: restrict staging access and do not send new chats during inspection. Set `BACKUP_PING_URL` empty. Do not start the cron container with source credentials; only run restore/read-only restic commands.
-4. Run `sh ./restore.sh <prod-snapshot-id>`; check staging on port 8082 and `https://starc.dbdemo.live`. Prod volumes are never mounted by this project. Staging now contains prod profiles and sessions; keep access restricted.
+4. Run `sh ./restore.sh <prod-snapshot-id>`; check staging on port 8082 and `https://<staging-host>`. Prod volumes are never mounted by this project. Staging now contains prod profiles and sessions; keep access restricted.
 5. Restore `.env.before-restore` to `.env`, then `docker compose up -d api backup` to recreate API with staging’s own keys and resume staging backups into `st-arc`. Remove the temporary credential copy securely. Restored prod chats become unreadable under staging’s distinct keys; for a lasting staging dataset, use a separately reviewed re-encryption procedure. Verify staging settings before the next deploy.
 
 `make test-backup` builds the backup image and tests encrypted local-repository initialization, repeated backup/retention, bad password failure, wipe/restore, byte-identical DB and upload comparison, stale-file cleanup, and failed snapshot lookup without stopping API. `make lint-backup` runs shellcheck. Both run in CI without R2 access.

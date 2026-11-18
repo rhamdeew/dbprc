@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # One-time (re-runnable) GitHub Environment setup for ARC deploys.
-# Usage: deploy/setup-github.sh staging|prod
+# Usage: VPS_IP=<ip> SSH_PORT=<port> APP_HOST=<hostname> deploy/setup-github.sh staging|prod
+# The address, port and hostname are stored as environment secrets, never in this public repo.
 # Needs: gh logged in as a repo admin, root SSH access to the VPS, htpasswd, openssl.
 set -euo pipefail
 
 REPO=rhamdeew/dbprc
-VPS_IP=192.227.229.38
-SSH_PORT=1898
+: "${VPS_IP:?set VPS_IP to the VPS address}"
+: "${SSH_PORT:?set SSH_PORT to the VPS sshd port}"
+: "${APP_HOST:?set APP_HOST to the hostname of this environment}"
 
 ENV="${1:-}"
 case "$ENV" in
-  staging) SSH_USER=staging; APP_HOST=starc.dbdemo.live; BRANCH=staging ;;
-  prod)    SSH_USER=www;     APP_HOST=arc.dbdemo.live;   BRANCH=prod ;;
+  staging) SSH_USER=staging; BRANCH=staging ;;
+  prod)    SSH_USER=www;     BRANCH=prod ;;
   *) echo "usage: $0 staging|prod"; exit 1 ;;
 esac
 
@@ -45,10 +47,10 @@ ssh -p "$SSH_PORT" "root@$VPS_IP" "set -e
 ssh -i "$tmp/key" -o IdentitiesOnly=yes -o BatchMode=yes -p "$SSH_PORT" "$SSH_USER@$VPS_IP" 'docker ps >/dev/null && echo "deploy key works"'
 secret SSH_PRIVATE_KEY "$(cat "$tmp/key")"
 secret SSH_KNOWN_HOSTS "$(ssh-keyscan -p "$SSH_PORT" "$VPS_IP" 2>/dev/null)"
-var SSH_HOST "$VPS_IP"
-var SSH_PORT "$SSH_PORT"
+secret SSH_HOST "$VPS_IP"
+secret SSH_PORT "$SSH_PORT"
+secret APP_HOST "$APP_HOST"
 var SSH_USER "$SSH_USER"
-var APP_HOST "$APP_HOST"
 
 step "Basic Auth"
 read -r -p "Basic Auth username for $ENV [arc]: " ba_user; ba_user="${ba_user:-arc}"
