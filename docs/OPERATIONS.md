@@ -5,11 +5,11 @@
 - **staging:** merge a PR into `staging`. It deploys automatically in about 5 minutes.
 - **prod:** merge a PR `staging → prod`, then approve the deployment in GitHub Actions (the `prod` environment requires approval).
 
-Each deploy: CI → build images → render `.env` → `deploy/env/deploy.sh <sha>` on the VPS → smoke test through the edge (`/healthz` reports the sha, `/` returns 200 on prod and asks for Basic Auth on staging).
+Each deploy: CI → build images → render `.env` → `deploy/env/deploy.sh <sha>` on the VPS → smoke test through the edge (`/healthz` reports the sha, `/` returns 200 on both).
 
 ## Public access and Basic Auth
 
-`BASIC_AUTH_MODE` is a web/Compose setting, not an API setting. Only exact `off` disables Basic Auth; unset, empty, and all other values keep it enabled. Deploy's Render .env step writes `off` for prod and `on` for staging. To change the normal policy, change that environment's assignment in `.github/workflows/deploy.yml`. To flip an existing stack manually, edit `BASIC_AUTH_MODE` in the protected `~/arc/.env` and recreate web with `docker compose up -d web`. The next deploy restores the workflow's policy. Keep `BASIC_AUTH_USER` and `BASIC_AUTH_HASH` secrets in both environments; they remain required configuration even when unused by prod. No edge Caddy change is needed.
+`BASIC_AUTH_MODE` is a web/Compose setting, not an API setting. Only exact `off` disables Basic Auth; unset, empty, and all other values keep it enabled. Deploy's Render .env step writes `off` for both prod and staging. To change the normal policy, change that environment's assignment in `.github/workflows/deploy.yml`. To flip an existing stack manually, edit `BASIC_AUTH_MODE` in the protected `~/arc/.env` and recreate web with `docker compose up -d web`. The next deploy restores the workflow's policy. Keep `BASIC_AUTH_USER` and `BASIC_AUTH_HASH` secrets in both environments; they remain required configuration even when unused by prod. No edge Caddy change is needed.
 
 With the switch off, the SPA bundle (`/`, `/login`, assets), `/healthz`, `/api/version`, and `/auth/google/*` are public. All other `/api/*`, `/ws`, and `/uploads/*` require a session. With it on, Basic Auth additionally gates every path except `/healthz` and `/ws`. `/ws` always requires a session and the app's Origin. Upload requests are authorized through API `/api/me` before Caddy serves bytes, fail closed on API errors, and use private immutable caching. Vite and the dev/E2E static server apply the same session rule.
 
