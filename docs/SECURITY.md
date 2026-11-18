@@ -4,9 +4,9 @@ ARC is an internal app for about 300 colleagues. Each environment has one API pr
 
 ## Gate
 
-Internet traffic terminates TLS on the edge Caddy. The environment Caddy (`deploy/env/Caddyfile`) uses `BASIC_AUTH_MODE`: only the exact value `off` disables Basic Auth. Missing, empty, or unexpected values keep it on. Deploy writes `off` for prod and `on` for staging. The shared Basic Auth credentials do not identify the caller and remain configured in both environments.
+Internet traffic terminates TLS on the edge Caddy. The environment Caddy (`deploy/env/Caddyfile`) uses `BASIC_AUTH_MODE`: only the exact value `off` disables Basic Auth. Missing, empty, or unexpected values keep it on. Deploy writes `off` for both prod and staging. The shared Basic Auth credentials do not identify the caller and remain configured in both environments.
 
-With Basic Auth off, the SPA bundle (including `/` and `/login`), `/healthz`, `/api/version`, and `/auth/google/*` are public. All other `/api/*`, `/ws`, and `/uploads/*` require a valid app session. Staging adds Basic Auth on every path except `/healthz` and `/ws`.
+With Basic Auth off, the SPA bundle (including `/` and `/login`), `/healthz`, `/api/version`, and `/auth/google/*` are public. All other `/api/*`, `/ws`, and `/uploads/*` require a valid app session. If the switch is turned on, Basic Auth additionally gates every path except `/healthz` and `/ws`.
 
 `/ws` is outside Basic Auth because browsers do not reliably send those credentials on a WebSocket handshake (Safari does not). The API answers 401 before the upgrade when the session cookie is missing, and 403 when `Origin` is not the app's own host.
 

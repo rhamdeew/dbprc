@@ -101,7 +101,7 @@ jobs:
           : "${APP_HOST:?APP_HOST secret is not set}"
           case "$ENV_NAME" in
             prod) WEB_PORT=8081; BASIC_AUTH_MODE=off ;;
-            staging) WEB_PORT=8082; BASIC_AUTH_MODE=on ;;
+            staging) WEB_PORT=8082; BASIC_AUTH_MODE=off ;;
             *) echo "unknown env $ENV_NAME"; exit 1 ;;
           esac
           umask 077
@@ -159,6 +159,4 @@ jobs:
           echo "$body"
           [[ "$body" == *'"version":"${{ github.sha }}"'* ]]
           code="$(curl -s -o /dev/null -w '%{http_code}' "https://$APP_HOST/")"
-          expected=401
-          if [[ "${{ github.ref_name }}" == prod ]]; then expected=200; fi
-          [[ "$code" == "$expected" ]] || { echo "expected $expected without Basic Auth, got $code"; exit 1; }
+          [[ "$code" == 200 ]] || { echo "expected 200 (Basic Auth is off), got $code"; exit 1; }
