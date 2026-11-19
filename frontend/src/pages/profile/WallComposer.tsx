@@ -1,4 +1,4 @@
-import { Box, Button, Checkbox, Group, Stack, Text, Textarea } from '@mantine/core';
+import { Button, Checkbox, Group, Stack, Text, Textarea } from '@mantine/core';
 import { useState, type FormEvent } from 'react';
 import { useCreateWallPost } from '../../api/wall';
 import { DrawingPad } from '../../components/DrawingPad';
@@ -7,12 +7,13 @@ const anonymousHint = "The owner of this wall will still see it's you";
 
 type WallComposerProps = {
   userId: number;
+  allowAnonymous: boolean;
   /** Set for a reply. Always the root id, matching the wall API. */
   parentId?: number;
   onPosted?: () => void;
 };
 
-export function WallComposer({ userId, parentId, onPosted }: WallComposerProps) {
+export function WallComposer({ userId, allowAnonymous, parentId, onPosted }: WallComposerProps) {
   const create = useCreateWallPost(userId);
   const [text, setText] = useState('');
   const [draw, setDraw] = useState(false);
@@ -27,7 +28,7 @@ export function WallComposer({ userId, parentId, onPosted }: WallComposerProps) 
     event.preventDefault();
     if (create.isPending || !canPost) return;
     create.mutate(
-      { body: text, anonymous, drawing: picture, parentId },
+      { body: text, anonymous: allowAnonymous && anonymous, drawing: picture, parentId },
       {
         onSuccess: () => {
           setText('');
@@ -52,9 +53,7 @@ export function WallComposer({ userId, parentId, onPosted }: WallComposerProps) 
           rows={reply ? 1 : 2}
         />
         {draw ? (
-          <Box style={{ maxWidth: '100%', overflowX: 'auto' }}>
-            <DrawingPad onChange={setDrawing} />
-          </Box>
+          <DrawingPad onChange={setDrawing} />
         ) : null}
         <Group justify="space-between" gap="sm">
           <Group gap="md">
@@ -69,7 +68,8 @@ export function WallComposer({ userId, parentId, onPosted }: WallComposerProps) 
             />
             <Checkbox
               label="Post anonymously"
-              checked={anonymous}
+              checked={allowAnonymous && anonymous}
+              disabled={!allowAnonymous}
               aria-describedby={hintId}
               onChange={(event) => setAnonymous(event.currentTarget.checked)}
             />
@@ -79,7 +79,7 @@ export function WallComposer({ userId, parentId, onPosted }: WallComposerProps) 
           </Button>
         </Group>
         <Text id={hintId} size="xs" c="dimmed">
-          {anonymousHint}
+          {allowAnonymous ? anonymousHint : 'This wall does not accept anonymous messages'}
         </Text>
       </Stack>
     </form>

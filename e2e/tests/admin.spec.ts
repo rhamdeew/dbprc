@@ -158,7 +158,9 @@ test('Owen can sign in again and gets an empty profile', async () => {
     await expect(fresh.getByRole('heading', { name: 'Photos (0/5)' })).toBeVisible();
     await expect(fresh.getByText('No photos yet.')).toBeVisible();
     await expect(fresh.getByText('No posts yet.')).toBeVisible();
-    await expect(fresh.getByText('Not set', { exact: true })).toHaveCount(4);
+    await expect(fresh.getByText('Not set', { exact: true })).toHaveCount(7);
+    await expect(fresh.getByRole('button', { name: 'Set status' })).toBeVisible();
+    await expect(fresh.getByRole('checkbox', { name: 'Allow anonymous messages on my wall' })).toBeChecked();
 
     await fresh.goto(owenProfile);
     await expect(fresh.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();

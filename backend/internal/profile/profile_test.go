@@ -525,14 +525,19 @@ type avatarBody struct {
 }
 
 type profileBody struct {
-	ID        int64         `json:"id"`
-	Name      string        `json:"name"`
-	Email     string        `json:"email"`
-	AvatarURL *string       `json:"avatarUrl"`
-	Available bool          `json:"available"`
-	Interests interestsBody `json:"interests"`
-	Photos    []photoBody   `json:"photos"`
-	IsMe      bool          `json:"isMe"`
+	Nickname       string        `json:"nickname"`
+	Hometown       string        `json:"hometown"`
+	About          string        `json:"about"`
+	Status         string        `json:"status"`
+	AllowAnonymous bool          `json:"allowAnonymous"`
+	ID             int64         `json:"id"`
+	Name           string        `json:"name"`
+	Email          string        `json:"email"`
+	AvatarURL      *string       `json:"avatarUrl"`
+	Available      bool          `json:"available"`
+	Interests      interestsBody `json:"interests"`
+	Photos         []photoBody   `json:"photos"`
+	IsMe           bool          `json:"isMe"`
 }
 
 type storedUser struct {
@@ -775,12 +780,12 @@ func assertNoContent(t *testing.T, res *http.Response) {
 
 func assertProfileKeys(t *testing.T, raw map[string]any) {
 	t.Helper()
-	for _, key := range []string{"id", "name", "email", "avatarUrl", "available", "interests", "photos", "isMe"} {
+	for _, key := range []string{"id", "name", "email", "avatarUrl", "available", "interests", "photos", "isMe", "nickname", "hometown", "about", "status", "allowAnonymous"} {
 		if _, ok := raw[key]; !ok {
 			t.Fatalf("missing %s in %v", key, raw)
 		}
 	}
-	if len(raw) != 8 {
+	if len(raw) != 13 {
 		t.Fatalf("keys %v", raw)
 	}
 }

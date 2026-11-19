@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -136,4 +137,42 @@ func count(t *testing.T, w *sql.DB, query string, args ...any) int {
 		t.Fatalf("count: %v", err)
 	}
 	return n
+}
+
+func TestProfileFieldsMigrationPreservesExistingData(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "arc.db")
+	w, err := openPool(t.Context(), path, writePoolMax)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = w.Close() }()
+	provider, err := newProvider(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 20261110211000); err != nil {
+		t.Fatal(err)
+	}
+	insertUser(t, w, 1, "ada@example.com")
+	exec(t, w, "INSERT INTO wall_posts (wall_owner_id, author_id, body, is_anonymous, created_at) VALUES (1, 1, 'secret', 1, ?)", ts)
+
+	database, err := Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	row := database.Reader().QueryRowContext(t.Context(), `
+		SELECT email, nickname, hometown, about, status, status_updated_at, allow_anonymous FROM users WHERE id = 1`)
+	var email, nickname, hometown, about, status string
+	var updated sql.NullString
+	var allow int
+	if err := row.Scan(&email, &nickname, &hometown, &about, &status, &updated, &allow); err != nil {
+		t.Fatal(err)
+	}
+	if email != "ada@example.com" || nickname != "" || hometown != "" || about != "" || status != "" || updated.Valid || allow != 1 {
+		t.Fatalf("unexpected migrated profile: %q %q %q %q %q %v %d", email, nickname, hometown, about, status, updated, allow)
+	}
+	if n := count(t, database.Reader(), "SELECT count(*) FROM wall_posts WHERE wall_owner_id = 1 AND is_anonymous = 1 AND body = 'secret'"); n != 1 {
+		t.Fatalf("existing anonymous posts = %d", n)
+	}
 }

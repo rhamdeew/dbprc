@@ -1096,3 +1096,53 @@ func writeChunk(buf *bytes.Buffer, typ string, data []byte) {
 func itoa(id int64) string {
 	return strconv.FormatInt(id, 10)
 }
+
+func TestWallAnonymityPreference(t *testing.T) {
+	srv, dir := newWallServer(t)
+	database := testutil.Database(t, srv)
+	owner := testutil.CreateUser(t, database)
+	visitor := testutil.CreateUser(t, database)
+	ownerClient := testutil.LoginAs(t, srv, owner)
+	visitorClient := testutil.LoginAs(t, srv, visitor)
+	url := wallURL(srv, owner.ID)
+	anonymous := fields{body: "anonymous message", bodySet: true, anonymous: "true", anonymousSet: true}
+	old, _ := mustPost(t, visitorClient, url, anonymous)
+
+	req, err := http.NewRequest(http.MethodPut, srv.URL+"/api/me/wall-settings", strings.NewReader(`{"allowAnonymous":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := ownerClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("settings update status %d", res.StatusCode)
+	}
+
+	assertAPIError(t, postForm(t, visitorClient, url, anonymous), http.StatusForbidden, "anonymous_disabled")
+	reply := anonymous
+	reply.parent, reply.parentSet = itoa(old.ID), true
+	reply.file, reply.fileSet, reply.filename = tinyPNG(t), true, "rejected.png"
+	assertAPIError(t, postForm(t, visitorClient, url, reply), http.StatusForbidden, "anonymous_disabled")
+	if files := fileSet(t, dir); len(files) != 0 {
+		t.Fatalf("rejected reply left drawing files: %v", files)
+	}
+	reply.fileSet = false
+	ownerReply, _ := mustPost(t, ownerClient, url, reply)
+	ownerRoot, _ := mustPost(t, ownerClient, url, anonymous)
+	if !ownerReply.IsAnonymous || !ownerRoot.IsAnonymous {
+		t.Fatal("owner should still be able to post anonymously")
+	}
+	public, _ := mustPost(t, visitorClient, url, fields{body: "public", bodySet: true})
+	if public.IsAnonymous || public.Author == nil {
+		t.Fatalf("public message = %+v", public)
+	}
+	_, page, _ := getWall(t, visitorClient, url)
+	original := page.Posts[len(page.Posts)-1]
+	if original.ID != old.ID || !original.IsAnonymous || original.Author != nil || len(original.Replies) != 1 {
+		t.Fatalf("existing post = %+v", original)
+	}
+}

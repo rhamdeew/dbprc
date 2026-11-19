@@ -444,3 +444,94 @@ test('a hosted domain outside the company shows the login error', async ({ brows
     await context.close();
   }
 });
+
+test('edits profile details and status, closes anonymous posting, and posts in a new color on mobile', async () => {
+  await alicePage.goto(aliceProfileURL);
+  const about = `I write software.\n${'longword'.repeat(95)}`;
+  for (const [label, value] of [
+    ['Nickname', 'Ace'],
+    ['Where are you from?', 'New Orleans'],
+    ['Tell something about you', about],
+  ] as const) {
+    await alicePage.getByRole('button', { name: `Edit ${label}`, exact: true }).click();
+    const input = alicePage.getByRole('textbox', { name: label, exact: true });
+    await input.fill(value);
+    await alicePage.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(input).toBeHidden();
+  }
+  const status = 'Reading a good book';
+  await alicePage.getByRole('button', { name: 'Set status' }).click();
+  await alicePage.getByRole('textbox', { name: 'Status' }).fill(status);
+  await alicePage.getByRole('textbox', { name: 'Status' }).press('Enter');
+  const editStatus = alicePage.getByRole('button', { name: `Edit status: ${status}` });
+  await expect(editStatus).toBeVisible();
+
+  const allow = alicePage.getByRole('checkbox', { name: 'Allow anonymous messages on my wall' });
+  await expect(allow).toBeChecked();
+  // The box is controlled and flips only after the save succeeds, so click and wait for the response.
+  const saved = alicePage.waitForResponse((r) => r.url().includes('/api/me/wall-settings') && r.request().method() === 'PUT');
+  await allow.click();
+  expect((await saved).ok()).toBe(true);
+  await expect(allow).not.toBeChecked();
+  await expect(alicePage.getByRole('form', { name: 'Wall composer' }).getByRole('checkbox', { name: 'Post anonymously' })).toBeEnabled();
+
+  await bobPage.setViewportSize({ width: 390, height: 844 });
+  await bobPage.goto(aliceProfileURL);
+  await expect(bobPage.getByRole('heading', { name: 'Alice "Ace" Arc' })).toBeVisible();
+  await expect(bobPage.getByText('New Orleans', { exact: true })).toBeVisible();
+  const biography = bobPage.getByText(about);
+  expect(await biography.textContent()).toBe(about);
+  await expect(biography).toHaveCSS('white-space', 'pre-wrap');
+  await expect(biography).toHaveCSS('overflow-wrap', 'anywhere');
+  await expect(bobPage.getByText(status, { exact: true })).toBeVisible();
+
+  await editStatus.click();
+  const statusInput = alicePage.getByRole('textbox', { name: 'Status' });
+  await statusInput.fill('');
+  await statusInput.press('Enter');
+  await expect(alicePage.getByRole('button', { name: 'Set status' })).toBeVisible();
+  await bobPage.reload();
+  await expect(bobPage.getByRole('heading', { name: 'Alice "Ace" Arc' })).toBeVisible();
+  await expect(bobPage.getByText(status, { exact: true })).toHaveCount(0);
+
+  const composer = bobPage.getByRole('form', { name: 'Wall composer' });
+  const anonymous = composer.getByRole('checkbox', { name: 'Post anonymously' });
+  await expect(anonymous).toBeDisabled();
+  await expect(anonymous).not.toBeChecked();
+  await expect(composer.getByText('This wall does not accept anonymous messages')).toBeVisible();
+  const rejected = await bobContext.request.post(aliceProfileURL.replace('/u/', '/api/users/') + '/wall', {
+    headers: { Origin: new URL(aliceProfileURL).origin },
+    multipart: { body: 'Rejected anonymous post', anonymous: 'true' },
+  });
+  expect(rejected.status()).toBe(403);
+  expect(await rejected.json()).toMatchObject({ code: 'anonymous_disabled' });
+
+  await composer.getByRole('checkbox', { name: 'Draw' }).check();
+  const colors = composer.getByRole('group', { name: 'Drawing colors' });
+  await expect(colors.getByRole('button')).toHaveCount(16);
+  const purple = colors.getByRole('button', { name: 'Purple' });
+  await expect(purple).toHaveCSS('background-color', 'rgb(123, 31, 162)');
+  await expect(purple).toHaveCSS('width', '32px');
+  const rows = await colors.getByRole('button').evaluateAll((buttons) => new Set(buttons.map((button) => button.getBoundingClientRect().top)).size);
+  expect(rows).toBeGreaterThan(1);
+  expect(await bobPage.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  expect(await composer.evaluate((form) => form.scrollWidth)).toBeLessThanOrEqual(await composer.evaluate((form) => form.clientWidth));
+
+  await purple.click();
+  await drawStroke(bobPage, composer.getByRole('application', { name: 'Drawing pad' }));
+  await composer.getByRole('textbox', { name: 'Write on this wall' }).fill('A purple drawing');
+  await composer.getByRole('button', { name: 'Post' }).click();
+  await expect(composer.getByRole('textbox', { name: 'Write on this wall' })).toBeEmpty();
+  await expect(bobPage.getByText('A purple drawing', { exact: true })).toBeVisible();
+  const drawing = bobPage.getByRole('img', { name: 'Drawing', exact: true }).first();
+  await expect.poll(() => drawing.evaluate((img: HTMLImageElement) => {
+    if (!img.complete || !img.naturalWidth) return false;
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const context = canvas.getContext('2d')!;
+    context.drawImage(img, 0, 0);
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    return data.some((channel, i) => i % 4 === 0 && channel === 123 && data[i + 1] === 31 && data[i + 2] === 162);
+  })).toBe(true);
+});
