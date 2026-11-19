@@ -159,8 +159,8 @@ export function DrawingPad({ onChange }: DrawingPadProps) {
               aria-pressed={color === pen.color}
               onClick={() => setColor(pen.color)}
               style={{
-                width: 32,
-                height: 32,
+                width: 24,
+                height: 24,
                 padding: 0,
                 background: pen.color,
                 border: `1px solid ${BORDER}`,

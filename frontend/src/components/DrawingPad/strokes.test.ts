@@ -18,9 +18,9 @@ import {
 } from './strokes';
 
 const black: PenColor = '#000';
-const blue: PenColor = '#3b5998';
-const red: PenColor = '#d93025';
-const green: PenColor = '#188038';
+const blue: PenColor = '#1e66f5';
+const red: PenColor = '#e53935';
+const green: PenColor = '#2ecc40';
 const thin: BrushSize = 4;
 const thick: BrushSize = 12;
 
