@@ -1,5 +1,5 @@
 import { Box, Button, Divider, Group, Loader, Modal, Stack, Text } from '@mantine/core';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ApiError } from '../../api/client';
 import { useDeleteWallPost, useWall, type WallPost } from '../../api/wall';
 import { Panel } from '../../components/Panel';
@@ -9,6 +9,8 @@ import { WallPostView } from './WallPostView';
 
 type WallSectionProps = {
   userId: number;
+  allowAnonymous: boolean;
+  settings?: ReactNode;
 };
 
 function wallErrorMessage(error: unknown): string {
@@ -16,7 +18,7 @@ function wallErrorMessage(error: unknown): string {
   return 'Could not load this wall.';
 }
 
-export function WallSection({ userId }: WallSectionProps) {
+export function WallSection({ userId, allowAnonymous, settings }: WallSectionProps) {
   const wall = useWall(userId);
   const remove = useDeleteWallPost(userId);
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
@@ -30,13 +32,14 @@ export function WallSection({ userId }: WallSectionProps) {
   return (
     <Panel title="Wall">
       <Stack gap="sm">
+        {settings}
         {wall.isPending ? (
           <Loader color="arcBlue" size="sm" aria-label="Loading wall" />
         ) : !wall.data ? (
           <Text>{wallErrorMessage(wall.error)}</Text>
         ) : (
           <>
-            <WallComposer userId={userId} />
+            <WallComposer userId={userId} allowAnonymous={allowAnonymous} />
             <Divider color={BORDER} />
             {posts.length === 0 ? (
               <Text c="dimmed">No posts yet.</Text>
@@ -83,6 +86,7 @@ export function WallSection({ userId }: WallSectionProps) {
                       {replyingTo === root.id ? (
                         <WallComposer
                           userId={userId}
+                          allowAnonymous={allowAnonymous}
                           parentId={root.id}
                           onPosted={() => setReplyingTo(null)}
                         />

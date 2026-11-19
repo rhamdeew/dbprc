@@ -17,6 +17,7 @@ const (
 type searchHit struct {
 	ID        int64   `json:"id"`
 	Name      string  `json:"name"`
+	Nickname  string  `json:"nickname"`
 	Email     string  `json:"email"`
 	AvatarURL *string `json:"avatarUrl"`
 }
@@ -45,6 +46,7 @@ func (h *handlers) search(w http.ResponseWriter, r *http.Request) {
 		out = append(out, searchHit{
 			ID:        row.ID,
 			Name:      row.Name,
+			Nickname:  row.Nickname,
 			Email:     row.Email,
 			AvatarURL: avatarPointer(row.AvatarPath),
 		})

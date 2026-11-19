@@ -40,11 +40,11 @@ function createdPost(overrides: Partial<WallPost> = {}): WallPost {
   };
 }
 
-function renderWall(userId = 9) {
+function renderWall(userId = 9, allowAnonymous = true) {
   // Author names link to profiles, so the wall needs a router.
   return render(
     <MemoryRouter>
-      <WallSection userId={userId} />
+      <WallSection userId={userId} allowAnonymous={allowAnonymous} />
     </MemoryRouter>,
   );
 }
@@ -396,4 +396,27 @@ describe('wall section', () => {
     expect(await screen.findByText('Something went wrong.')).toBeInTheDocument();
     expect(screen.queryByRole('form', { name: 'Wall composer' })).not.toBeInTheDocument();
   });
+});
+
+it('keeps anonymous posting off in both composers while allowing public posts', async () => {
+  const user = userEvent.setup();
+  mockWall([root()]);
+  const submitted: FormData[] = [];
+  server.use(http.post('/api/users/:id/wall', async ({ request }) => {
+    submitted.push(await request.formData());
+    return HttpResponse.json(createdPost(), { status: 201 });
+  }));
+  renderWall(9, false);
+
+  const composer = within(await screen.findByRole('form', { name: 'Wall composer' }));
+  const checkbox = composer.getByRole('checkbox', { name: 'Post anonymously' });
+  expect(checkbox).toBeDisabled();
+  expect(checkbox).not.toBeChecked();
+  expect(checkbox).toHaveAccessibleDescription('This wall does not accept anonymous messages');
+  await user.click(screen.getByRole('button', { name: 'Reply' }));
+  const reply = within(screen.getByRole('form', { name: 'Reply composer' }));
+  expect(reply.getByRole('checkbox', { name: 'Post anonymously' })).toBeDisabled();
+  await user.type(reply.getByRole('textbox', { name: 'Write a reply' }), 'Public reply');
+  await user.click(reply.getByRole('button', { name: 'Post' }));
+  await waitFor(() => expect(submitted[0]?.get('anonymous')).toBe('false'));
 });

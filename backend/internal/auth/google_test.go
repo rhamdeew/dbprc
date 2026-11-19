@@ -109,7 +109,7 @@ func TestGoogleLogin(t *testing.T) {
 
 	t.Run("repeat login updates name and keeps avatar", func(t *testing.T) {
 		past := "2020-01-01T00:00:00Z"
-		res, err := testutil.Database(t, srv).Writer().ExecContext(t.Context(), `UPDATE users SET last_login_at = ? WHERE id = ?`, past, first.ID)
+		res, err := testutil.Database(t, srv).Writer().ExecContext(t.Context(), `UPDATE users SET last_login_at = ?, nickname = ? WHERE id = ?`, past, "Enchantress", first.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -129,6 +129,9 @@ func TestGoogleLogin(t *testing.T) {
 		}
 		if again.AvatarPath == nil || *again.AvatarPath != *first.AvatarPath || again.Available != 1 || again.CreatedAt != first.CreatedAt {
 			t.Fatalf("kept %+v first %+v", again, first)
+		}
+		if again.Nickname != "Enchantress" {
+			t.Fatalf("repeat sign-in changed nickname to %q", again.Nickname)
 		}
 		if again.LastLoginAt == first.LastLoginAt {
 			t.Fatalf("last login not updated: %s", again.LastLoginAt)

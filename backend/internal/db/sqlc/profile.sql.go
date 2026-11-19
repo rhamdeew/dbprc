@@ -123,7 +123,7 @@ const searchUsers = `-- name: SearchUsers :many
 WITH pattern AS (
     SELECT lower(?2) AS value
 )
-SELECT id, name, email, avatar_path
+SELECT id, name, email, avatar_path, nickname
 FROM users, pattern
 WHERE like(pattern.value, lower(email), char(92))
    OR like(pattern.value, lower(name), char(92))
@@ -142,6 +142,7 @@ type SearchUsersRow struct {
 	Name       string
 	Email      string
 	AvatarPath *string
+	Nickname   string
 }
 
 // pattern is a LIKE prefix: \ % and _ already escaped, with a trailing %.
@@ -160,6 +161,7 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]Sea
 			&i.Name,
 			&i.Email,
 			&i.AvatarPath,
+			&i.Nickname,
 		); err != nil {
 			return nil, err
 		}
@@ -178,7 +180,8 @@ const updateAvatarPath = `-- name: UpdateAvatarPath :one
 UPDATE users
 SET avatar_path = ?
 WHERE id = ?
-RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at
+RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at,
+          nickname, hometown, about, status, status_updated_at, allow_anonymous
 `
 
 type UpdateAvatarPathParams struct {
@@ -198,8 +201,85 @@ func (q *Queries) UpdateAvatarPath(ctx context.Context, arg UpdateAvatarPathPara
 		&i.Available,
 		&i.CreatedAt,
 		&i.LastLoginAt,
+		&i.Nickname,
+		&i.Hometown,
+		&i.About,
+		&i.Status,
+		&i.StatusUpdatedAt,
+		&i.AllowAnonymous,
 	)
 	return i, err
+}
+
+const updateProfileFields = `-- name: UpdateProfileFields :one
+UPDATE users
+SET nickname = ?, hometown = ?, about = ?
+WHERE id = ?
+RETURNING nickname, hometown, about
+`
+
+type UpdateProfileFieldsParams struct {
+	Nickname string
+	Hometown string
+	About    string
+	ID       int64
+}
+
+type UpdateProfileFieldsRow struct {
+	Nickname string
+	Hometown string
+	About    string
+}
+
+func (q *Queries) UpdateProfileFields(ctx context.Context, arg UpdateProfileFieldsParams) (UpdateProfileFieldsRow, error) {
+	row := q.db.QueryRowContext(ctx, updateProfileFields,
+		arg.Nickname,
+		arg.Hometown,
+		arg.About,
+		arg.ID,
+	)
+	var i UpdateProfileFieldsRow
+	err := row.Scan(&i.Nickname, &i.Hometown, &i.About)
+	return i, err
+}
+
+const updateProfileStatus = `-- name: UpdateProfileStatus :one
+UPDATE users
+SET status = ?, status_updated_at = ?
+WHERE id = ?
+RETURNING status
+`
+
+type UpdateProfileStatusParams struct {
+	Status          string
+	StatusUpdatedAt *string
+	ID              int64
+}
+
+func (q *Queries) UpdateProfileStatus(ctx context.Context, arg UpdateProfileStatusParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, updateProfileStatus, arg.Status, arg.StatusUpdatedAt, arg.ID)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
+const updateWallAnonymity = `-- name: UpdateWallAnonymity :one
+UPDATE users
+SET allow_anonymous = ?
+WHERE id = ?
+RETURNING allow_anonymous
+`
+
+type UpdateWallAnonymityParams struct {
+	AllowAnonymous int64
+	ID             int64
+}
+
+func (q *Queries) UpdateWallAnonymity(ctx context.Context, arg UpdateWallAnonymityParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, updateWallAnonymity, arg.AllowAnonymous, arg.ID)
+	var allow_anonymous int64
+	err := row.Scan(&allow_anonymous)
+	return allow_anonymous, err
 }
 
 const upsertInterests = `-- name: UpsertInterests :one

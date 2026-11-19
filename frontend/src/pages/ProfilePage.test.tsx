@@ -337,3 +337,94 @@ describe('profile page', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
+
+describe('profile settings', () => {
+  it.each([
+    ['Nickname', 'nickname', 40],
+    ['Where are you from?', 'hometown', 100],
+    ['Tell something about you', 'about', 1000],
+  ] as const)('edits %s with a code point limit', async (label, key, limit) => {
+    const user = userEvent.setup();
+    mockProfile(profileFor(member, { hometown: 'London', about: 'First line\nSecond line' }));
+    let saved: Record<string, string> | undefined;
+    server.use(http.put('/api/me/profile', async ({ request }) => {
+      saved = (await request.json()) as Record<string, string>;
+      return HttpResponse.json(saved);
+    }));
+    renderProfile('7');
+
+    await user.click(await screen.findByRole('button', { name: `Edit ${label}` }));
+    const input = screen.getByRole('textbox', { name: label });
+    expect(input.tagName).toBe(key === 'about' ? 'TEXTAREA' : 'INPUT');
+    await user.clear(input);
+    const atLimit = '🌱'.repeat(limit);
+    await user.click(input);
+    await user.paste(atLimit + '🌱');
+    expect(input).toHaveValue(atLimit);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(input).not.toBeInTheDocument());
+    expect(saved).toEqual({ nickname: '', hometown: 'London', about: 'First line\nSecond line', [key]: atLimit });
+    if (key === 'nickname') {
+      expect(screen.getByRole('heading', { name: `Ada "${atLimit}" Lovelace` })).toBeInTheDocument();
+    }
+  });
+
+  it('shows a visitor filled fields and the status, with no owner controls', async () => {
+    mockProfile({ ...colleague, nickname: 'Al', hometown: '', about: 'Two\nlines', status: 'In a meeting' });
+    renderProfile('9');
+
+    expect(await screen.findByRole('heading', { name: 'Alan "Al" Turing' })).toBeInTheDocument();
+    expect(screen.getByText('Two lines')).toHaveStyle({ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' });
+    expect(screen.getByText('In a meeting')).toBeInTheDocument();
+    expect(screen.queryByText('Where are you from?')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /status/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Allow anonymous messages on my wall' })).not.toBeInTheDocument();
+  });
+
+  it('sets status with Enter, cancels with Escape, and clears with Save', async () => {
+    const user = userEvent.setup();
+    mockProfile(profileFor(member));
+    const saved: string[] = [];
+    server.use(http.put('/api/me/status', async ({ request }) => {
+      const { status } = (await request.json()) as { status: string };
+      saved.push(status);
+      return HttpResponse.json({ status });
+    }));
+    renderProfile('7');
+
+    await user.click(await screen.findByRole('button', { name: 'Set status' }));
+    const status = screen.getByRole('textbox', { name: 'Status' });
+    expect(status).toHaveFocus();
+    const atLimit = '🌱'.repeat(140);
+    await user.paste(atLimit + '🌱');
+    await user.keyboard('{Enter}');
+    await user.click(await screen.findByRole('button', { name: `Edit status: ${atLimit}` }));
+    await user.clear(screen.getByRole('textbox', { name: 'Status' }));
+    await user.keyboard('{Escape}');
+    expect(saved).toEqual([atLimit]);
+
+    await user.click(screen.getByRole('button', { name: `Edit status: ${atLimit}` }));
+    await user.clear(screen.getByRole('textbox', { name: 'Status' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('button', { name: 'Set status' })).toBeInTheDocument();
+    expect(saved).toEqual([atLimit, '']);
+  });
+
+  it('updates the wall setting without disabling the owner’s own composer', async () => {
+    const user = userEvent.setup();
+    mockProfile(profileFor(member));
+    let saved: { allowAnonymous: boolean } | undefined;
+    server.use(http.put('/api/me/wall-settings', async ({ request }) => {
+      saved = (await request.json()) as { allowAnonymous: boolean };
+      return HttpResponse.json(saved);
+    }));
+    renderProfile('7');
+
+    const setting = await screen.findByRole('checkbox', { name: 'Allow anonymous messages on my wall' });
+    expect(setting).toBeChecked();
+    await user.click(setting);
+    await waitFor(() => expect(setting).not.toBeChecked());
+    expect(saved).toEqual({ allowAnonymous: false });
+    expect(screen.getByRole('checkbox', { name: 'Post anonymously' })).toBeEnabled();
+  });
+});
