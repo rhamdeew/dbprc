@@ -510,8 +510,8 @@ test('edits profile details and status, closes anonymous posting, and posts in a
   const colors = composer.getByRole('group', { name: 'Drawing colors' });
   await expect(colors.getByRole('button')).toHaveCount(16);
   const purple = colors.getByRole('button', { name: 'Purple' });
-  await expect(purple).toHaveCSS('background-color', 'rgb(123, 31, 162)');
-  await expect(purple).toHaveCSS('width', '32px');
+  await expect(purple).toHaveCSS('background-color', 'rgb(160, 50, 255)');
+  await expect(purple).toHaveCSS('width', '24px');
   const rows = await colors.getByRole('button').evaluateAll((buttons) => new Set(buttons.map((button) => button.getBoundingClientRect().top)).size);
   expect(rows).toBeGreaterThan(1);
   expect(await bobPage.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
@@ -532,6 +532,6 @@ test('edits profile details and status, closes anonymous posting, and posts in a
     const context = canvas.getContext('2d')!;
     context.drawImage(img, 0, 0);
     const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
-    return data.some((channel, i) => i % 4 === 0 && channel === 123 && data[i + 1] === 31 && data[i + 2] === 162);
+    return data.some((channel, i) => i % 4 === 0 && channel === 160 && data[i + 1] === 50 && data[i + 2] === 255);
   })).toBe(true);
 });
