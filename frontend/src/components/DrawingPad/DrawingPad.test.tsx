@@ -137,7 +137,7 @@ describe('DrawingPad', () => {
     await expectPng(onChange);
     const ctx = (pad() as HTMLCanvasElement).getContext('2d');
     const styles = ctx?.__getEvents().filter((event) => event.type === 'fillStyle').map((event) => String(event.props.value).toLowerCase()) ?? [];
-    expect(styles).toContain('#7b1fa2');
+    expect(styles).toContain('#a032ff');
   });
 
   it('emits null when undo or clear leaves the pad empty', async () => {
