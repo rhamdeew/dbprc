@@ -468,7 +468,10 @@ test('edits profile details and status, closes anonymous posting, and posts in a
 
   const allow = alicePage.getByRole('checkbox', { name: 'Allow anonymous messages on my wall' });
   await expect(allow).toBeChecked();
-  await allow.uncheck();
+  // The box is controlled and flips only after the save succeeds, so click and wait for the response.
+  const saved = alicePage.waitForResponse((r) => r.url().includes('/api/me/wall-settings') && r.request().method() === 'PUT');
+  await allow.click();
+  expect((await saved).ok()).toBe(true);
   await expect(allow).not.toBeChecked();
   await expect(alicePage.getByRole('form', { name: 'Wall composer' }).getByRole('checkbox', { name: 'Post anonymously' })).toBeEnabled();
 
