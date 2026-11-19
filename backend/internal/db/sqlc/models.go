@@ -38,12 +38,18 @@ type Photo struct {
 }
 
 type User struct {
-	ID          int64
-	GoogleSub   string
-	Email       string
-	Name        string
-	AvatarPath  *string
-	Available   int64
-	CreatedAt   string
-	LastLoginAt string
+	ID              int64
+	GoogleSub       string
+	Email           string
+	Name            string
+	AvatarPath      *string
+	Available       int64
+	CreatedAt       string
+	LastLoginAt     string
+	Nickname        string
+	Hometown        string
+	About           string
+	Status          string
+	StatusUpdatedAt *string
+	AllowAnonymous  int64
 }

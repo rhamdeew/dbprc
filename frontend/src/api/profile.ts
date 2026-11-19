@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, uploadFile } from './client';
 import { meKey, type Me } from './me';
+import { colleagueSearchPrefix } from './search';
 
 /** `GET /api/users/{id}` (ARC-19). `isMe` is the server's own-profile flag. */
 export type Interests = {
@@ -16,7 +17,15 @@ export type ProfilePhoto = {
   url: string;
 };
 
-export type Profile = {
+export type ProfileFields = {
+  nickname: string;
+  hometown: string;
+  about: string;
+};
+
+export type Profile = ProfileFields & {
+  status: string;
+  allowAnonymous: boolean;
   id: number;
   name: string;
   email: string;
@@ -105,5 +114,33 @@ export function useDeletePhoto(userId: number) {
         ...profile,
         photos: profile.photos.filter((item) => item.id !== photoId),
       })),
+  });
+}
+
+export function useSaveProfileFields(userId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ProfileFields) => api<ProfileFields>('/api/me/profile', { method: 'PUT', body }),
+    onSuccess: (fields) => {
+      writeProfile(queryClient, userId, (profile) => ({ ...profile, ...fields }));
+      void queryClient.invalidateQueries({ queryKey: colleagueSearchPrefix });
+    },
+  });
+}
+
+export function useSaveStatus(userId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (status: string) => api<{ status: string }>('/api/me/status', { method: 'PUT', body: { status } }),
+    onSuccess: (result) => writeProfile(queryClient, userId, (profile) => ({ ...profile, ...result })),
+  });
+}
+
+export function useSaveWallSettings(userId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (allowAnonymous: boolean) =>
+      api<{ allowAnonymous: boolean }>('/api/me/wall-settings', { method: 'PUT', body: { allowAnonymous } }),
+    onSuccess: (result) => writeProfile(queryClient, userId, (profile) => ({ ...profile, ...result })),
   });
 }

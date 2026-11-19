@@ -3,11 +3,14 @@ import { useParams } from 'react-router';
 import { ApiError } from '../api/client';
 import { useProfile, type Profile } from '../api/profile';
 import { Panel } from '../components/Panel';
+import { profileName } from '../components/profileName';
 import { BORDER } from '../theme/theme';
 import { AvatarColumn } from './profile/AvatarColumn';
 import { InformationBox } from './profile/InformationBox';
 import { PhotosBox } from './profile/PhotosBox';
+import { ProfileStatus } from './profile/ProfileStatus';
 import { WallSection } from './profile/WallSection';
+import { WallSettings } from './profile/WallSettings';
 
 function parseProfileId(raw: string | undefined): number | null {
   if (!raw || !/^[1-9]\d*$/.test(raw)) return null;
@@ -35,7 +38,10 @@ function ProfileView({ profile }: { profile: Profile }) {
       <AvatarColumn profile={profile} />
       <Stack gap="md" style={{ flex: 1, minWidth: 0 }} w="100%">
         <Box pb={6} style={{ borderBottom: `1px solid ${BORDER}` }}>
-          <Title order={1}>{profile.name}</Title>
+          <Title order={1} style={{ overflowWrap: 'anywhere' }}>
+            {profileName(profile.name, profile.nickname)}
+          </Title>
+          <ProfileStatus profile={profile} />
           <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
             {profile.email}
             {profile.available ? '' : ' · not available for random chats'}
@@ -43,7 +49,11 @@ function ProfileView({ profile }: { profile: Profile }) {
         </Box>
         <InformationBox profile={profile} />
         <PhotosBox profile={profile} />
-        <WallSection userId={profile.id} />
+        <WallSection
+          userId={profile.id}
+          allowAnonymous={profile.isMe || profile.allowAnonymous}
+          settings={profile.isMe ? <WallSettings profile={profile} /> : undefined}
+        />
       </Stack>
     </Flex>
   );

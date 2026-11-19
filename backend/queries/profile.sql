@@ -39,7 +39,8 @@ RETURNING path;
 UPDATE users
 SET avatar_path = ?
 WHERE id = ?
-RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at;
+RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at,
+          nickname, hometown, about, status, status_updated_at, allow_anonymous;
 
 -- name: SearchUsers :many
 -- pattern is a LIKE prefix: \ % and _ already escaped, with a trailing %.
@@ -47,10 +48,28 @@ RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_
 WITH pattern AS (
     SELECT lower(sqlc.arg('pattern')) AS value
 )
-SELECT id, name, email, avatar_path
+SELECT id, name, email, avatar_path, nickname
 FROM users, pattern
 WHERE like(pattern.value, lower(email), char(92))
    OR like(pattern.value, lower(name), char(92))
    OR like('% ' || pattern.value, lower(name), char(92))
 ORDER BY lower(name), id
 LIMIT sqlc.arg('row_limit');
+
+-- name: UpdateProfileFields :one
+UPDATE users
+SET nickname = ?, hometown = ?, about = ?
+WHERE id = ?
+RETURNING nickname, hometown, about;
+
+-- name: UpdateProfileStatus :one
+UPDATE users
+SET status = ?, status_updated_at = ?
+WHERE id = ?
+RETURNING status;
+
+-- name: UpdateWallAnonymity :one
+UPDATE users
+SET allow_anonymous = ?
+WHERE id = ?
+RETURNING allow_anonymous;

@@ -19,7 +19,8 @@ INSERT INTO users (
     created_at,
     last_login_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at
+RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at,
+          nickname, hometown, about, status, status_updated_at, allow_anonymous
 `
 
 type CreateUserParams struct {
@@ -52,6 +53,12 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Available,
 		&i.CreatedAt,
 		&i.LastLoginAt,
+		&i.Nickname,
+		&i.Hometown,
+		&i.About,
+		&i.Status,
+		&i.StatusUpdatedAt,
+		&i.AllowAnonymous,
 	)
 	return i, err
 }
@@ -67,7 +74,8 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, google_sub, email, name, avatar_path, available, created_at, last_login_at
+SELECT id, google_sub, email, name, avatar_path, available, created_at, last_login_at,
+          nickname, hometown, about, status, status_updated_at, allow_anonymous
 FROM users
 WHERE id = ?
 `
@@ -84,12 +92,19 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.Available,
 		&i.CreatedAt,
 		&i.LastLoginAt,
+		&i.Nickname,
+		&i.Hometown,
+		&i.About,
+		&i.Status,
+		&i.StatusUpdatedAt,
+		&i.AllowAnonymous,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, google_sub, email, name, avatar_path, available, created_at, last_login_at
+SELECT id, google_sub, email, name, avatar_path, available, created_at, last_login_at,
+          nickname, hometown, about, status, status_updated_at, allow_anonymous
 FROM users
 WHERE email = ?
 `
@@ -106,12 +121,19 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Available,
 		&i.CreatedAt,
 		&i.LastLoginAt,
+		&i.Nickname,
+		&i.Hometown,
+		&i.About,
+		&i.Status,
+		&i.StatusUpdatedAt,
+		&i.AllowAnonymous,
 	)
 	return i, err
 }
 
 const getUserByGoogleSub = `-- name: GetUserByGoogleSub :one
-SELECT id, google_sub, email, name, avatar_path, available, created_at, last_login_at
+SELECT id, google_sub, email, name, avatar_path, available, created_at, last_login_at,
+          nickname, hometown, about, status, status_updated_at, allow_anonymous
 FROM users
 WHERE google_sub = ?
 `
@@ -128,6 +150,12 @@ func (q *Queries) GetUserByGoogleSub(ctx context.Context, googleSub string) (Use
 		&i.Available,
 		&i.CreatedAt,
 		&i.LastLoginAt,
+		&i.Nickname,
+		&i.Hometown,
+		&i.About,
+		&i.Status,
+		&i.StatusUpdatedAt,
+		&i.AllowAnonymous,
 	)
 	return i, err
 }
@@ -141,7 +169,8 @@ SET
     available = ?,
     last_login_at = ?
 WHERE id = ?
-RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at
+RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at,
+          nickname, hometown, about, status, status_updated_at, allow_anonymous
 `
 
 type UpdateUserParams struct {
@@ -172,6 +201,12 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.Available,
 		&i.CreatedAt,
 		&i.LastLoginAt,
+		&i.Nickname,
+		&i.Hometown,
+		&i.About,
+		&i.Status,
+		&i.StatusUpdatedAt,
+		&i.AllowAnonymous,
 	)
 	return i, err
 }
@@ -183,7 +218,8 @@ SET
     name = ?,
     last_login_at = ?
 WHERE id = ?
-RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at
+RETURNING id, google_sub, email, name, avatar_path, available, created_at, last_login_at,
+          nickname, hometown, about, status, status_updated_at, allow_anonymous
 `
 
 type UpdateUserLoginParams struct {
@@ -210,6 +246,12 @@ func (q *Queries) UpdateUserLogin(ctx context.Context, arg UpdateUserLoginParams
 		&i.Available,
 		&i.CreatedAt,
 		&i.LastLoginAt,
+		&i.Nickname,
+		&i.Hometown,
+		&i.About,
+		&i.Status,
+		&i.StatusUpdatedAt,
+		&i.AllowAnonymous,
 	)
 	return i, err
 }

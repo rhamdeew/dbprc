@@ -1,6 +1,6 @@
-import { Button, Group, Stack, Text, TextInput } from '@mantine/core';
+import { Button, Group, Stack, Text, Textarea, TextInput } from '@mantine/core';
 import { useState } from 'react';
-import { interestFields, useSaveInterests, type InterestKey, type Profile } from '../../api/profile';
+import { interestFields, useSaveInterests, useSaveProfileFields, type InterestKey, type Profile } from '../../api/profile';
 import { Panel } from '../../components/Panel';
 import { HEADER } from '../../theme/theme';
 
@@ -8,14 +8,25 @@ type InformationBoxProps = {
   profile: Profile;
 };
 
+const profileFields = [
+  { key: 'nickname', label: 'Nickname', limit: 40 },
+  { key: 'hometown', label: 'Where are you from?', limit: 100 },
+  { key: 'about', label: 'Tell something about you', limit: 1000 },
+] as const;
+
+type FieldKey = InterestKey | (typeof profileFields)[number]['key'];
+
 export function InformationBox({ profile }: InformationBoxProps) {
-  const save = useSaveInterests(profile.id);
-  const [editing, setEditing] = useState<InterestKey | null>(null);
+  const saveInterests = useSaveInterests(profile.id);
+  const saveProfile = useSaveProfileFields(profile.id);
+  const pending = saveInterests.isPending || saveProfile.isPending;
+  const values = { ...profile.interests, nickname: profile.nickname, hometown: profile.hometown, about: profile.about };
+  const [editing, setEditing] = useState<FieldKey | null>(null);
   const [draft, setDraft] = useState('');
 
-  function start(key: InterestKey) {
+  function start(key: FieldKey) {
     setEditing(key);
-    setDraft(profile.interests[key]);
+    setDraft(values[key]);
   }
 
   function cancel() {
@@ -24,30 +35,48 @@ export function InformationBox({ profile }: InformationBoxProps) {
   }
 
   function submit() {
-    if (!editing) return;
-    // PUT replaces every interest. Send the other three unchanged.
-    const interests = { ...profile.interests, [editing]: draft.trim() };
-    save.mutate(interests, { onSuccess: () => setEditing(null) });
+    if (!editing || pending) return;
+    const options = { onSuccess: cancel };
+    const value = draft.trim();
+    switch (editing) {
+      case 'nickname':
+      case 'hometown':
+      case 'about':
+        saveProfile.mutate(
+          { nickname: profile.nickname, hometown: profile.hometown, about: profile.about, [editing]: value },
+          options,
+        );
+        break;
+      default:
+        saveInterests.mutate({ ...profile.interests, [editing]: value }, options);
+    }
   }
 
   return (
     <Panel title="Information">
       <Stack gap={6}>
-        {interestFields.map((field) => {
-          const value = profile.interests[field.key];
+        {[...profileFields, ...interestFields].map((field) => {
+          const isProfileField = 'limit' in field;
+          const value = values[field.key];
+          if (isProfileField && !profile.isMe && (value === '' || field.key === 'nickname')) return null;
           if (editing === field.key) {
+            const Input = field.key === 'about' ? Textarea : TextInput;
             return (
               <Stack key={field.key} gap={6}>
-                <TextInput
+                <Input
                   label={field.label}
                   value={draft}
-                  onChange={(event) => setDraft(Array.from(event.currentTarget.value).slice(0, 500).join(''))}
+                  disabled={pending}
+                  onChange={(event) => {
+                    const limit = isProfileField ? field.limit : 500;
+                    setDraft(Array.from(event.currentTarget.value).slice(0, limit).join(''));
+                  }}
                 />
                 <Group gap="xs">
-                  <Button type="button" size="compact-xs" loading={save.isPending} onClick={submit}>
+                  <Button type="button" size="compact-xs" loading={pending} onClick={submit}>
                     Save
                   </Button>
-                  <Button type="button" size="compact-xs" variant="default" disabled={save.isPending} onClick={cancel}>
+                  <Button type="button" size="compact-xs" variant="default" disabled={pending} onClick={cancel}>
                     Cancel
                   </Button>
                 </Group>
@@ -56,14 +85,14 @@ export function InformationBox({ profile }: InformationBoxProps) {
           }
           return (
             <Group key={field.key} justify="space-between" wrap="nowrap" gap="sm" align="flex-start">
-              <Text fw={700} c="dimmed" w={64} style={{ flexShrink: 0 }}>
-                {field.label}:
+              <Text fw={700} c="dimmed" w={isProfileField ? { base: 100, sm: 144 } : 64} style={{ flexShrink: 0 }}>
+                {field.label}{field.key === 'hometown' ? '' : ':'}
               </Text>
-              <Text style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }} c={value === '' ? 'dimmed' : undefined}>
+              <Text style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', whiteSpace: field.key === 'about' ? 'pre-wrap' : undefined }} c={value === '' ? 'dimmed' : undefined}>
                 {value === '' ? 'Not set' : value}
               </Text>
               {profile.isMe ? (
-                <Button type="button" variant="subtle" size="compact-xs" c={HEADER} aria-label={`Edit ${field.label}`} onClick={() => start(field.key)}>
+                <Button type="button" variant="subtle" size="compact-xs" c={HEADER} aria-label={`Edit ${field.label}`} disabled={pending} onClick={() => start(field.key)}>
                   Edit
                 </Button>
               ) : null}

@@ -20,10 +20,12 @@ body {
 
 .arc-drawing-pad {
   width: 400px;
-  height: 200px;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 1;
   touch-action: none;
   background-color: #ffffff;
-  /* An outline, not a border: the canvas box must stay exactly 400x200 for pointer mapping. */
+  /* An outline leaves the canvas content box available for pointer mapping. */
   outline: 1px solid #d8dfea;
   cursor: crosshair;
   display: block;

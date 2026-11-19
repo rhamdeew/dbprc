@@ -3,16 +3,17 @@ import { useDebouncedValue } from '@mantine/hooks';
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { searchQueryReady, useColleagueSearch, type Colleague } from '../api/search';
+import { profileName } from './profileName';
 
 const searchDebounceMs = 250;
 
 function ColleagueOption({ person }: { person: Colleague }) {
   return (
     <Group gap="xs" wrap="nowrap">
-      <Avatar src={person.avatarUrl} name={person.name} alt="" size={24} radius={2} color="arcBlue" />
+      <Avatar src={person.avatarUrl} name={profileName(person.name, person.nickname)} alt="" size={24} radius={2} color="arcBlue" />
       <div style={{ minWidth: 0 }}>
         <Text size="sm" fw={700} truncate>
-          {person.name}
+          {profileName(person.name, person.nickname)}
         </Text>
         <Text size="xs" c="dimmed" truncate>
           {person.email}
@@ -42,7 +43,7 @@ export function SearchSlot() {
         value={query}
         data={people.map((person) => ({
           value: String(person.id),
-          label: `${person.name} ${person.email}`,
+          label: `${profileName(person.name, person.nickname)} ${person.email}`,
         }))}
         filter={({ options }) => options}
         withScrollArea={false}
