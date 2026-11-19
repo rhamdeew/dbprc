@@ -6,9 +6,9 @@
 |---|---|
 | Identity | Sign in with Google only. Accept ID tokens with `hd == ALLOWED_DOMAIN` and `email_verified == true` (checked server-side from the token claims). Account is created on first login. Name + avatar come from Google; the name is not editable. No passwords. |
 | Gate | Company Google domain; Basic Auth is off in both environments (`BASIC_AUTH_MODE=off`); only exact `off` disables it, all other values keep it on. `/healthz` and `/ws` are exempt from Basic Auth (`/ws` still needs a session cookie and the app's own `Origin`; see `docs/SECURITY.md`). |
-| Profile | Avatar, interests (hobby, music, movies, other), up to 5 extra photos shown in a lightbox. |
+| Profile | Editable avatar, nickname, hometown, multi-line bio, one-line status, interests (hobby, music, movies, other), and up to 5 extra photos shown in a lightbox. |
 | Wall | Anyone can post on anyone's wall: text and/or a drawing. Replies are 2 levels max (a reply to a reply attaches to the root). The wall owner can delete any post on their wall. |
-| Anonymous posts | Author is stored. It is visible **only to the wall owner**; everyone else sees "Anonymous". The poster is warned about this in the UI. |
+| Anonymous posts | Author is stored. It is visible **only to the wall owner**; everyone else sees "Anonymous". The poster is warned in the UI. Wall owners can turn off new anonymous posts and replies by visitors (403 `anonymous_disabled`). The default is on. Existing anonymous posts and the wall owner’s ability to post anonymously are unaffected. |
 | Search | By email or name prefix, from the 4th character, max 10 results. |
 | Random chat | "Start random chat" pairs you with a random available colleague. Prefer people you never chatted with; if none, re-match an existing partner: reuse that chat and add a system message "Matched again ☕". One chat per pair, kept forever. No way to pick a person. |
 | Availability | Toggle "available for random chats". Unavailable: you are not matched and cannot start a random chat; existing chats keep working. |

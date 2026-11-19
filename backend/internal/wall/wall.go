@@ -32,9 +32,10 @@ const (
 )
 
 var (
-	errMissingWall = errors.New("wall not found")
-	errNotOnWall   = errors.New("post not on wall")
-	errParentLoop  = errors.New("wall parent loop")
+	errMissingWall       = errors.New("wall not found")
+	errNotOnWall         = errors.New("post not on wall")
+	errParentLoop        = errors.New("wall parent loop")
+	errAnonymousDisabled = errors.New("anonymous wall posts disabled")
 )
 
 type authorJSON struct {
@@ -279,7 +280,8 @@ func (h *handlers) create(ctx context.Context, wallID int64, me sqlc.User, form 
 	defer func() { _ = tx.Rollback() }()
 
 	q := sqlc.New(tx)
-	if _, err := q.GetUser(ctx, wallID); err != nil {
+	owner, err := q.GetUser(ctx, wallID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return sqlc.CreateWallPostRow{}, errMissingWall
 		}
@@ -296,6 +298,9 @@ func (h *handlers) create(ctx context.Context, wallID int64, me sqlc.User, form 
 	}
 	anon := int64(0)
 	if form.anonymous {
+		if wallID != me.ID && owner.AllowAnonymous == 0 {
+			return sqlc.CreateWallPostRow{}, errAnonymousDisabled
+		}
 		anon = 1
 	}
 	row, err := q.CreateWallPost(ctx, sqlc.CreateWallPostParams{
@@ -511,6 +516,8 @@ func writePostError(log *slog.Logger, w http.ResponseWriter, err error, wallID, 
 		httpx.WriteError(w, http.StatusNotFound, "not_found", "Profile not found.")
 	case errors.Is(err, errNotOnWall):
 		httpx.WriteError(w, http.StatusNotFound, "not_found", "Post not found.")
+	case errors.Is(err, errAnonymousDisabled):
+		httpx.WriteError(w, http.StatusForbidden, "anonymous_disabled", "This wall does not accept anonymous messages.")
 	default:
 		log.Error("save wall post", "err", err, "wall_owner_id", wallID, "user_id", viewerID)
 		httpx.WriteError(w, http.StatusInternalServerError, "internal", "Something went wrong.")

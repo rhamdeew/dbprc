@@ -149,48 +149,53 @@ export function DrawingPad({ onChange }: DrawingPadProps) {
 
   return (
     <Stack gap={6} align="flex-start">
-      <Group gap={6} role="toolbar" aria-label="Drawing tools" wrap="wrap">
-        {PENS.map((pen) => (
-          <UnstyledButton
-            key={pen.color}
-            type="button"
-            aria-label={pen.label}
-            aria-pressed={color === pen.color}
-            onClick={() => setColor(pen.color)}
-            style={{
-              width: 18,
-              height: 18,
-              padding: 0,
-              background: pen.color,
-              border: `1px solid ${color === pen.color ? '#333333' : BORDER}`,
-            }}
-          />
-        ))}
-        {BRUSHES.map((brush) => (
-          <UnstyledButton
-            key={brush.size}
-            type="button"
-            aria-label={brush.label}
-            aria-pressed={size === brush.size}
-            onClick={() => setSize(brush.size)}
-            fz={12}
-            px={6}
-            style={{
-              fontWeight: size === brush.size ? 700 : 400,
-              border: `1px solid ${size === brush.size ? '#333333' : BORDER}`,
-              background: '#ffffff',
-            }}
-          >
-            {brush.short}
-          </UnstyledButton>
-        ))}
-        <Button type="button" variant="default" size="xs" onClick={onUndo} disabled={!hasInk}>
-          Undo
-        </Button>
-        <Button type="button" variant="default" size="xs" onClick={onClear} disabled={!hasInk}>
-          Clear
-        </Button>
-      </Group>
+      <Stack gap={6} role="toolbar" aria-label="Drawing tools" maw="100%">
+        <Group gap={6} wrap="wrap" role="group" aria-label="Drawing colors">
+          {PENS.map((pen) => (
+            <UnstyledButton
+              key={pen.color}
+              type="button"
+              aria-label={pen.label}
+              aria-pressed={color === pen.color}
+              onClick={() => setColor(pen.color)}
+              style={{
+                width: 24,
+                height: 24,
+                padding: 0,
+                background: pen.color,
+                border: `1px solid ${BORDER}`,
+                boxShadow: color === pen.color ? 'inset 0 0 0 2px white, inset 0 0 0 4px #333' : undefined,
+              }}
+            />
+          ))}
+        </Group>
+        <Group gap={6} wrap="wrap">
+          {BRUSHES.map((brush) => (
+            <UnstyledButton
+              key={brush.size}
+              type="button"
+              aria-label={brush.label}
+              aria-pressed={size === brush.size}
+              onClick={() => setSize(brush.size)}
+              fz={12}
+              px={6}
+              style={{
+                fontWeight: size === brush.size ? 700 : 400,
+                border: `1px solid ${size === brush.size ? '#333333' : BORDER}`,
+                background: '#ffffff',
+              }}
+            >
+              {brush.short}
+            </UnstyledButton>
+          ))}
+          <Button type="button" variant="default" size="xs" onClick={onUndo} disabled={!hasInk}>
+            Undo
+          </Button>
+          <Button type="button" variant="default" size="xs" onClick={onClear} disabled={!hasInk}>
+            Clear
+          </Button>
+        </Group>
+      </Stack>
       <canvas
         ref={canvasRef}
         role="application"
@@ -200,7 +205,9 @@ export function DrawingPad({ onChange }: DrawingPadProps) {
         className="arc-drawing-pad"
         style={{
           width: PAD_WIDTH,
-          height: PAD_HEIGHT,
+          maxWidth: '100%',
+          height: 'auto',
+          aspectRatio: `${PAD_WIDTH} / ${PAD_HEIGHT}`,
           touchAction: 'none',
           backgroundColor: '#ffffff',
           cursor: 'crosshair',

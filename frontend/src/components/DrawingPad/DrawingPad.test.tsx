@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { setupVitestCanvasMock } from 'vitest-canvas-mock';
 import { describe, expect, it, vi } from 'vitest';
@@ -59,13 +59,16 @@ async function expectPng(onChange: ReturnType<typeof vi.fn>) {
 }
 
 describe('DrawingPad', () => {
-  it('shows a 400×200 pad, four colors, two brushes, undo and clear', () => {
+  it('shows a 400×200 bitmap, sixteen colors, two brushes, undo and clear', () => {
     render(<DrawingPad onChange={vi.fn()} />);
     const canvas = pad();
-    expect(canvas).toHaveStyle({ width: '400px', height: '200px', touchAction: 'none' });
+    expect(canvas).toHaveStyle({ width: '400px', maxWidth: '100%', touchAction: 'none' });
     expect(canvas).toHaveAttribute('width', '400');
     expect(canvas).toHaveAttribute('height', '200');
     expect(screen.getByRole('toolbar', { name: 'Drawing tools' })).toBeInTheDocument();
+    const colors = within(screen.getByRole('group', { name: 'Drawing colors' }));
+    expect(colors.getAllByRole('button')).toHaveLength(16);
+    expect(colors.getByRole('button', { name: 'White' })).toHaveStyle({ background: '#ffffff' });
     for (const name of ['Black', 'Blue', 'Red', 'Green', 'Thin brush', 'Thick brush']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
@@ -83,7 +86,7 @@ describe('DrawingPad', () => {
       const canvas = pad() as HTMLCanvasElement;
       expect(canvas.width).toBe(800);
       expect(canvas.height).toBe(400);
-      expect(canvas).toHaveStyle({ width: '400px', height: '200px' });
+      expect(canvas).toHaveStyle({ width: '400px', maxWidth: '100%' });
     } finally {
       if (original) Object.defineProperty(window, 'devicePixelRatio', original);
       else Reflect.deleteProperty(window, 'devicePixelRatio');
@@ -117,9 +120,9 @@ describe('DrawingPad', () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<DrawingPad onChange={onChange} />);
-    await user.click(screen.getByRole('button', { name: 'Red' }));
+    await user.click(screen.getByRole('button', { name: 'Purple' }));
     await user.click(screen.getByRole('button', { name: 'Thick brush' }));
-    expect(screen.getByRole('button', { name: 'Red' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Purple' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Black' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Thick brush' })).toHaveAttribute('aria-pressed', 'true');
 
@@ -134,7 +137,7 @@ describe('DrawingPad', () => {
     await expectPng(onChange);
     const ctx = (pad() as HTMLCanvasElement).getContext('2d');
     const styles = ctx?.__getEvents().filter((event) => event.type === 'fillStyle').map((event) => String(event.props.value).toLowerCase()) ?? [];
-    expect(styles).toContain('#d93025');
+    expect(styles).toContain('#a032ff');
   });
 
   it('emits null when undo or clear leaves the pad empty', async () => {

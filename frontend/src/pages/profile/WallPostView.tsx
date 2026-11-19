@@ -43,7 +43,7 @@ export function WallPostView({ post, onDelete }: WallPostViewProps) {
             alt="Drawing"
             width={400}
             height={200}
-            // Drawn at 400x200 CSS pixels; the stored bitmap is larger on a high-density screen.
+            // The logical drawing size is 400x200; high-density screens store a larger bitmap.
             style={{
               display: 'block',
               width: 400,

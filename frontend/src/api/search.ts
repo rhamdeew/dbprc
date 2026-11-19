@@ -5,6 +5,7 @@ import { api } from './client';
 export type Colleague = {
   id: number;
   name: string;
+  nickname: string;
   email: string;
   avatarUrl: string | null;
 };
@@ -12,8 +13,10 @@ export type Colleague = {
 /** The API returns nobody until the query is this many characters. */
 export const minSearchCharacters = 4;
 
+export const colleagueSearchPrefix = ['users', 'search'] as const;
+
 export function colleagueSearchKey(q: string) {
-  return ['users', 'search', q] as const;
+  return [...colleagueSearchPrefix, q] as const;
 }
 
 /** `Array.from` counts Unicode code points, matching the API's rune check. */

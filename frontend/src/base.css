@@ -20,11 +20,60 @@ body {
 
 .arc-drawing-pad {
   width: 400px;
-  height: 200px;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 1;
   touch-action: none;
   background-color: #ffffff;
-  /* An outline, not a border: the canvas box must stay exactly 400x200 for pointer mapping. */
+  /* An outline leaves the canvas content box available for pointer mapping. */
   outline: 1px solid #d8dfea;
   cursor: crosshair;
   display: block;
+}
+
+/* Status: "Set status" call to action and the TV-style creeping line for long statuses. */
+.arc-status-cta,
+.arc-status-edit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Early-VK look: the placeholder is a plain blue link, a set status is plain text. */
+.arc-status-cta {
+  color: #3b5998;
+}
+
+.arc-status-cta:hover,
+.arc-status-cta:focus-visible {
+  text-decoration: underline;
+}
+
+.arc-status-edit:hover,
+.arc-status-edit:focus-visible {
+  background: #edeff4;
+}
+
+.arc-status-marquee {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.arc-status-marquee > span {
+  display: inline-block;
+  padding-left: 100%;
+  animation: arc-creeping-line linear infinite;
+}
+
+.arc-status-marquee:hover > span {
+  animation-play-state: paused;
+}
+
+@keyframes arc-creeping-line {
+  to {
+    transform: translateX(-100%);
+  }
 }

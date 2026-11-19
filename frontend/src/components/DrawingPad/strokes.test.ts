@@ -18,9 +18,9 @@ import {
 } from './strokes';
 
 const black: PenColor = '#000';
-const blue: PenColor = '#3b5998';
-const red: PenColor = '#d93025';
-const green: PenColor = '#188038';
+const blue: PenColor = '#1e66f5';
+const red: PenColor = '#e53935';
+const green: PenColor = '#2ecc40';
 const thin: BrushSize = 4;
 const thick: BrushSize = 12;
 
@@ -79,10 +79,13 @@ function draw(drawing: Drawing, ratio = 1): FakeContext {
 }
 
 describe('strokes', () => {
-  it('uses the pad size, four pens and two brushes from the card', () => {
+  it('keeps the pad size, original colors, and brush sizes with the expanded palette', () => {
     expect(PAD_WIDTH).toBe(400);
     expect(PAD_HEIGHT).toBe(200);
-    expect(PENS.map((pen) => pen.color)).toEqual([black, blue, red, green]);
+    const colors = PENS.map((pen) => pen.color);
+    expect(colors[0]).toBe(black);
+    expect(colors).toEqual(expect.arrayContaining([blue, red, green]));
+    expect(new Set(colors).size).toBe(16);
     expect(BRUSHES.map((brush) => brush.size)).toEqual([thin, thick]);
   });
 

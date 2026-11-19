@@ -248,7 +248,7 @@ func assertHitIDs(t *testing.T, hits []map[string]any, want []int64) {
 		if hitID(t, hit) != want[i] {
 			t.Fatalf("hit %d id %d want %d", i, hitID(t, hit), want[i])
 		}
-		if len(hit) != 4 {
+		if len(hit) != 5 {
 			t.Fatalf("keys %#v", hit)
 		}
 	}
@@ -256,7 +256,7 @@ func assertHitIDs(t *testing.T, hits []map[string]any, want []int64) {
 
 func assertHit(t *testing.T, hit map[string]any, user sqlc.User, avatar any) {
 	t.Helper()
-	if hitID(t, hit) != user.ID || hit["name"] != user.Name || hit["email"] != user.Email || hit["avatarUrl"] != avatar {
+	if hitID(t, hit) != user.ID || hit["name"] != user.Name || hit["nickname"] != user.Nickname || hit["email"] != user.Email || hit["avatarUrl"] != avatar {
 		t.Fatalf("hit %#v want id %d name %s email %s avatar %#v", hit, user.ID, user.Name, user.Email, avatar)
 	}
 }

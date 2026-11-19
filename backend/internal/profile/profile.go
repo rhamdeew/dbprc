@@ -47,14 +47,17 @@ type photoJSON struct {
 }
 
 type profileJSON struct {
-	ID        int64         `json:"id"`
-	Name      string        `json:"name"`
-	Email     string        `json:"email"`
-	AvatarURL *string       `json:"avatarUrl"`
-	Available bool          `json:"available"`
-	Interests interestsJSON `json:"interests"`
-	Photos    []photoJSON   `json:"photos"`
-	IsMe      bool          `json:"isMe"`
+	profileFieldsJSON
+	Status         string        `json:"status"`
+	AllowAnonymous bool          `json:"allowAnonymous"`
+	ID             int64         `json:"id"`
+	Name           string        `json:"name"`
+	Email          string        `json:"email"`
+	AvatarURL      *string       `json:"avatarUrl"`
+	Available      bool          `json:"available"`
+	Interests      interestsJSON `json:"interests"`
+	Photos         []photoJSON   `json:"photos"`
+	IsMe           bool          `json:"isMe"`
 }
 
 type avatarJSON struct {
@@ -78,9 +81,16 @@ func Routes(mux *http.ServeMux, log *slog.Logger, sessions *session.Manager, dat
 	guard := httpx.RequireUser(log, sessions.UserID, sqlc.New(database.Reader()).GetUser, sessions.Destroy)
 	// Avatar and photo uploads share one bucket: 20 per user per minute.
 	uploadLimit := httpx.NewLimiter(20, time.Minute)
+	settingsLimit := httpx.NewLimiter(20, time.Minute)
+	settings := func(handler http.HandlerFunc) http.Handler {
+		return guard(httpx.LimitBody(httpx.JSONBodyLimit)(httpx.RateLimit(settingsLimit)(handler)))
+	}
 	const uploadBody = int64(upload.MaxBytes + multipartSlack)
 	mux.Handle("GET /api/users/search", guard(http.HandlerFunc(h.search)))
 	mux.Handle("GET /api/users/{id}", guard(http.HandlerFunc(h.get)))
+	mux.Handle("PUT /api/me/profile", settings(h.putProfileFields))
+	mux.Handle("PUT /api/me/status", settings(h.putStatus))
+	mux.Handle("PUT /api/me/wall-settings", settings(h.putWallSettings))
 	mux.Handle("PUT /api/me/interests", guard(httpx.LimitBody(httpx.JSONBodyLimit)(http.HandlerFunc(h.putInterests))))
 	mux.Handle("POST /api/me/avatar", guard(httpx.LimitBody(uploadBody)(httpx.RateLimit(uploadLimit)(http.HandlerFunc(h.postAvatar)))))
 	mux.Handle("POST /api/me/photos", guard(httpx.LimitBody(uploadBody)(httpx.RateLimit(uploadLimit)(http.HandlerFunc(h.postPhoto)))))
@@ -136,14 +146,17 @@ func (h *handlers) get(w http.ResponseWriter, r *http.Request) {
 		photos = append(photos, photoJSON{ID: row.ID, URL: upload.URL(row.Path)})
 	}
 	httpx.WriteJSON(w, http.StatusOK, profileJSON{
-		ID:        user.ID,
-		Name:      user.Name,
-		Email:     user.Email,
-		AvatarURL: avatarPointer(user.AvatarPath),
-		Available: user.Available != 0,
-		Interests: interests,
-		Photos:    photos,
-		IsMe:      me.ID == user.ID,
+		profileFieldsJSON: profileFieldsJSON{Nickname: user.Nickname, Hometown: user.Hometown, About: user.About},
+		Status:            user.Status,
+		AllowAnonymous:    user.AllowAnonymous != 0,
+		ID:                user.ID,
+		Name:              user.Name,
+		Email:             user.Email,
+		AvatarURL:         avatarPointer(user.AvatarPath),
+		Available:         user.Available != 0,
+		Interests:         interests,
+		Photos:            photos,
+		IsMe:              me.ID == user.ID,
 	})
 }
 

@@ -1,14 +1,26 @@
 import { getStroke } from 'perfect-freehand';
 
-/** CSS pixel size of the wall drawing pad. The bitmap is this times devicePixelRatio. */
+/** Logical size of the wall drawing pad. The bitmap is this times devicePixelRatio. */
 export const PAD_WIDTH = 400;
 export const PAD_HEIGHT = 200;
 
 export const PENS = [
   { color: '#000', label: 'Black' },
-  { color: '#3b5998', label: 'Blue' },
-  { color: '#d93025', label: 'Red' },
-  { color: '#188038', label: 'Green' },
+  { color: '#666666', label: 'Dark gray' },
+  { color: '#b3b3b3', label: 'Light gray' },
+  { color: '#ffffff', label: 'White' },
+  { color: '#e53935', label: 'Red' },
+  { color: '#fb8c00', label: 'Orange' },
+  { color: '#ffd600', label: 'Yellow' },
+  { color: '#76d600', label: 'Lime' },
+  { color: '#2ecc40', label: 'Green' },
+  { color: '#00bfa5', label: 'Teal' },
+  { color: '#29b6f6', label: 'Sky blue' },
+  { color: '#1e66f5', label: 'Blue' },
+  { color: '#a032ff', label: 'Purple' },
+  { color: '#ff4fa3', label: 'Pink' },
+  { color: '#8d5524', label: 'Brown' },
+  { color: '#ffcc99', label: 'Peach' },
 ] as const;
 
 /** Diameters in CSS pixels. The card asks for two sizes and does not pick the values. */
