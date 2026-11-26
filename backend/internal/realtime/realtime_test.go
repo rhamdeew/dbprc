@@ -119,7 +119,7 @@ func TestEvents(t *testing.T) {
 	if forBo.Partner.ID != ann.ID || forBo.Partner.Name != "Ann" || forBo.Partner.AvatarURL == nil || *forBo.Partner.AvatarURL != "/uploads/avatars/ann.png" {
 		t.Fatalf("bo partner %+v", forBo.Partner)
 	}
-	if forBo.LastMessage != nil || forBo.UnreadCount != 0 {
+	if forBo.LastMessage != nil || forBo.UnreadCount != 0 || forBo.PartnerLastReadMessageID == nil || *forBo.PartnerLastReadMessageID != 0 {
 		t.Fatalf("bo chat %+v", forBo)
 	}
 	listCode, listRaw := get(t, clientB, srv.URL+"/api/chats")
@@ -146,6 +146,31 @@ func TestEvents(t *testing.T) {
 	assertMessage(t, msgB.Data, forBo.ID, raw)
 	assertJSONEqual(t, msgB.Data, msgB2.Data)
 	assertJSONEqual(t, msgA.Data, msgB.Data)
+
+	var sent struct {
+		ID int64 `json:"id"`
+	}
+	mustJSON(t, raw, &sent)
+	code, raw = postJSON(t, clientB, fmt.Sprintf("%s/api/chats/%d/read", srv.URL, forBo.ID), map[string]any{"lastMessageId": sent.ID})
+	if code != http.StatusOK {
+		t.Fatalf("read %d %s", code, raw)
+	}
+	receipt := readEvent(t, connA)
+	if receipt.Type != "chat.read" {
+		t.Fatalf("event type %s, want chat.read", receipt.Type)
+	}
+	assertJSONEqual(t, receipt.Data, []byte(fmt.Sprintf(`{"chatId":%d,"lastReadMessageId":%d}`, forBo.ID, sent.ID)))
+
+	// The reader's two sockets should see the next message with no receipt ahead of it.
+	code, raw = postJSON(t, clientA, fmt.Sprintf("%s/api/chats/%d/messages", srv.URL, forBo.ID), map[string]any{"body": "again"})
+	if code != http.StatusCreated {
+		t.Fatalf("post %d %s", code, raw)
+	}
+	for _, conn := range []*websocket.Conn{connB, connB2} {
+		if ev := readEvent(t, conn); ev.Type != "message.new" {
+			t.Fatalf("reader got unexpected %s", ev.Type)
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 400*time.Millisecond)
 	defer cancel()
@@ -191,7 +216,8 @@ type chatView struct {
 	LastMessage *struct {
 		Body string `json:"body"`
 	} `json:"lastMessage"`
-	UnreadCount int64 `json:"unreadCount"`
+	UnreadCount              int64  `json:"unreadCount"`
+	PartnerLastReadMessageID *int64 `json:"partnerLastReadMessageId"`
 }
 
 func assertMessage(t *testing.T, data []byte, chatID int64, httpMessage []byte) {

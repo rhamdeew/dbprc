@@ -118,6 +118,7 @@ describe('app shell', () => {
             partner: { id: 105, name: 'Grace Hopper', avatarUrl: null },
             lastMessage: { body: 'hi', kind: 'text', createdAt: '2026-11-11T12:00:00Z' },
             unreadCount: 2,
+            partnerLastReadMessageId: 0,
           },
         ]),
       ),

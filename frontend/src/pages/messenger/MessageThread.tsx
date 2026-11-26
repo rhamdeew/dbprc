@@ -24,6 +24,7 @@ type MessageThreadProps = {
   chatId: number;
   /** Null until the chat list has this chat. */
   partner: ChatPartner | null;
+  partnerCursor: number;
 };
 
 function PartnerAvatar({ partner, size }: { partner: ChatPartner | null; size: number }) {
@@ -65,13 +66,15 @@ type BubbleProps = {
   mine: boolean;
   /** Last line of a run from one sender: it gets the avatar and the squared corner. */
   last: boolean;
+  read: boolean;
   partner: ChatPartner | null;
 };
 
-function Bubble({ message, mine, last, partner }: BubbleProps) {
+function Bubble({ message, mine, last, partner, read }: BubbleProps) {
   const broken = message.body === unavailableBody;
   // A negative id is the optimistic copy that the server has not confirmed yet.
   const pending = message.id < 0;
+  const receipt = read ? 'Read' : 'Sent';
   return (
     <Group justify={mine ? 'flex-end' : 'flex-start'} align="flex-end" gap={6} wrap="nowrap" mb={last ? 6 : 0}>
       {mine ? null : last ? (
@@ -98,15 +101,22 @@ function Bubble({ message, mine, last, partner }: BubbleProps) {
         >
           {broken ? 'Message unavailable' : message.body}
         </Text>
-        <Text component="time" dateTime={message.createdAt} display="block" c="dimmed" size="xs" ta="right">
-          {pending ? 'sending…' : clockTime(message.createdAt)}
-        </Text>
+        <Group gap={3} justify="flex-end" wrap="nowrap">
+          <Text component="time" dateTime={message.createdAt} c="dimmed" size="xs">
+            {pending ? 'sending…' : clockTime(message.createdAt)}
+          </Text>
+          {mine && !pending && message.kind === 'text' && (
+            <Text component="span" role="img" aria-label={receipt} title={receipt} c={read ? 'arcBlue' : 'dimmed'} size="xs">
+              {read ? '✓✓' : '✓'}
+            </Text>
+          )}
+        </Group>
       </Box>
     </Group>
   );
 }
 
-function MessageList({ items, myId, partner }: { items: ChatMessage[]; myId: number | undefined; partner: ChatPartner | null }) {
+function MessageList({ items, myId, partner, partnerCursor }: Pick<MessageThreadProps, 'partner' | 'partnerCursor'> & { items: ChatMessage[]; myId: number | undefined }) {
   return (
     <Stack gap={3}>
       {items.map((message, index) => {
@@ -122,7 +132,13 @@ function MessageList({ items, myId, partner }: { items: ChatMessage[]; myId: num
             {message.kind === 'system' ? (
               <Separator kind="system">{message.body}</Separator>
             ) : (
-              <Bubble message={message} mine={message.senderId === myId} last={last} partner={partner} />
+              <Bubble
+                message={message}
+                mine={message.senderId === myId}
+                last={last}
+                partner={partner}
+                read={message.id <= partnerCursor}
+              />
             )}
           </Fragment>
         );
@@ -131,7 +147,7 @@ function MessageList({ items, myId, partner }: { items: ChatMessage[]; myId: num
   );
 }
 
-export function MessageThread({ chatId, partner }: MessageThreadProps) {
+export function MessageThread({ chatId, partner, partnerCursor }: MessageThreadProps) {
   const me = useMe();
   const messages = useMessages(chatId);
   const items = flattenMessages(messages.data);
@@ -223,7 +239,12 @@ export function MessageThread({ chatId, partner }: MessageThreadProps) {
                 </Stack>
               </Center>
             ) : (
-              <MessageList items={items} myId={me.data?.id} partner={partner} />
+              <MessageList
+                items={items}
+                myId={me.data?.id}
+                partner={partner}
+                partnerCursor={Math.max(partnerCursor, messages.data?.pages[0]?.partnerLastReadMessageId ?? 0)}
+              />
             )}
           </Box>
           <Composer

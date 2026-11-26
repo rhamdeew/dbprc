@@ -2,6 +2,7 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useEffectEvent } from 'react';
 import {
   applyMessageToCache,
+  applyReadToCache,
   chatsKey,
   messagesKey,
   placeChatFirst,
@@ -34,9 +35,12 @@ export const reconnectClock = {
   },
 };
 
+type ChatRead = { chatId: number; lastReadMessageId: number };
+
 export type RealtimeEvent =
   | { type: 'chat.new'; data: ChatSummary }
-  | { type: 'message.new'; data: { chatId: number; message: ChatMessage } };
+  | { type: 'message.new'; data: { chatId: number; message: ChatMessage } }
+  | { type: 'chat.read'; data: ChatRead };
 
 export function parseRealtimeEvent(raw: unknown): RealtimeEvent | null {
   let value: unknown = raw;
@@ -50,6 +54,9 @@ export function parseRealtimeEvent(raw: unknown): RealtimeEvent | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
   if (value.type === 'chat.new' && isChatSummary(value.data)) {
     return { type: 'chat.new', data: value.data };
+  }
+  if (value.type === 'chat.read' && isChatRead(value.data)) {
+    return { type: 'chat.read', data: value.data };
   }
   if (value.type === 'message.new' && isMessageEvent(value.data)) {
     return { type: 'message.new', data: value.data };
@@ -69,6 +76,10 @@ export function applyRealtime(queryClient: QueryClient, raw: unknown, openChatId
     queryClient.setQueryData<ChatSummary[]>(chatsKey, placeChatFirst(list, event.data));
     return;
   }
+  if (event.type === 'chat.read') {
+    applyReadToCache(queryClient, event.data.chatId, event.data.lastReadMessageId);
+    return;
+  }
   applyMessageToCache(queryClient, event.data.chatId, event.data.message, openChatId);
 }
 
@@ -76,7 +87,7 @@ export function applyRealtime(queryClient: QueryClient, raw: unknown, openChatId
  * One socket for the signed-in session. The first open does not refetch.
  * A later open invalidates the chat list and the thread that is on screen.
  * Failed connects wait 1s, then double until 30s, and reset after a successful open.
- * `onEvent` runs after the cache update for each accepted `chat.new` / `message.new`.
+ * `onEvent` runs after the cache update for each accepted event.
  */
 export function useRealtime(openChatId: number | null, onEvent?: (event: RealtimeEvent) => void) {
   const queryClient = useQueryClient();
@@ -180,6 +191,7 @@ function isChatSummary(value: unknown): value is ChatSummary {
   if (!isId(partner.id) || typeof partner.name !== 'string') return false;
   if (partner.avatarUrl !== null && typeof partner.avatarUrl !== 'string') return false;
   if (typeof value.unreadCount !== 'number') return false;
+  if (value.partnerLastReadMessageId !== 0 && !isId(value.partnerLastReadMessageId)) return false;
   if (value.lastMessage === null) return true;
   return isLastMessage(value.lastMessage);
 }
@@ -198,4 +210,8 @@ function isMessage(value: unknown): value is ChatMessage {
 function isMessageEvent(value: unknown): value is { chatId: number; message: ChatMessage } {
   if (!isRecord(value) || !isId(value.chatId)) return false;
   return isMessage(value.message);
+}
+
+function isChatRead(value: unknown): value is ChatRead {
+  return isRecord(value) && isId(value.chatId) && isId(value.lastReadMessageId);
 }

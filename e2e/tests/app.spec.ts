@@ -310,14 +310,20 @@ test('a random chat shows up live and both people can write', async () => {
   // The thread header links the partner's name too, so look inside the chat list.
   const chatLink = bobPage.getByRole('navigation', { name: 'Chats' }).getByRole('link', { name: /Alice Arc/ });
   await expect(chatLink).toBeVisible();
-  await chatLink.click();
-  await expect(bobPage.getByRole('heading', { level: 2, name: 'Alice Arc' })).toBeVisible();
-  await expect(bobPage.getByText('No messages yet.')).toBeVisible();
+  await waitForOpenSocket(alicePage);
 
   const aliceComposer = alicePage.getByRole('form', { name: 'Message composer' });
   await aliceComposer.getByLabel('Message').fill('Hello from Alice');
   await aliceComposer.getByRole('button', { name: 'Send' }).click();
-  await expect(bobPage.getByRole('log', { name: 'Messages' })).toContainText('Hello from Alice');
+  const aliceLog = alicePage.getByRole('log', { name: 'Messages' });
+  await expect(aliceLog.getByRole('img', { name: 'Sent' })).toHaveText('✓');
+  await chatLink.click();
+  await expect(bobPage.getByRole('heading', { level: 2, name: 'Alice Arc' })).toBeVisible();
+  const bobLog = bobPage.getByRole('log', { name: 'Messages' });
+  await expect(bobLog).toContainText('Hello from Alice');
+  await expect(bobLog.getByRole('img', { name: /^(Sent|Read)$/ })).toHaveCount(0);
+  await expect(aliceLog.getByRole('img', { name: 'Read' })).toHaveText('✓✓');
+  await expect(aliceLog.getByRole('img', { name: 'Sent' })).toHaveCount(0);
 
   const bobComposer = bobPage.getByRole('form', { name: 'Message composer' });
   await bobComposer.getByLabel('Message').fill('Hello from Bob');
