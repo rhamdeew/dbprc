@@ -85,26 +85,44 @@ func (q *Queries) GetInterests(ctx context.Context, userID int64) (Interest, err
 }
 
 const listUserPhotos = `-- name: ListUserPhotos :many
-SELECT id, user_id, path, created_at
+SELECT photos.id, photos.path,
+       (SELECT count(*) FROM photo_likes WHERE photo_likes.photo_id = photos.id) AS like_count,
+       CAST(EXISTS(SELECT 1 FROM photo_likes WHERE photo_likes.photo_id = photos.id
+                   AND photo_likes.user_id = ?1) AS INTEGER) AS liked_by_me,
+       (SELECT count(*) FROM photo_comments WHERE photo_comments.photo_id = photos.id) AS comment_count
 FROM photos
-WHERE user_id = ?
-ORDER BY id
+WHERE photos.user_id = ?2
+ORDER BY photos.id
 `
 
-func (q *Queries) ListUserPhotos(ctx context.Context, userID int64) ([]Photo, error) {
-	rows, err := q.db.QueryContext(ctx, listUserPhotos, userID)
+type ListUserPhotosParams struct {
+	ViewerID int64
+	UserID   int64
+}
+
+type ListUserPhotosRow struct {
+	ID           int64
+	Path         string
+	LikeCount    int64
+	LikedByMe    int64
+	CommentCount int64
+}
+
+func (q *Queries) ListUserPhotos(ctx context.Context, arg ListUserPhotosParams) ([]ListUserPhotosRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUserPhotos, arg.ViewerID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Photo{}
+	items := []ListUserPhotosRow{}
 	for rows.Next() {
-		var i Photo
+		var i ListUserPhotosRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.UserID,
 			&i.Path,
-			&i.CreatedAt,
+			&i.LikeCount,
+			&i.LikedByMe,
+			&i.CommentCount,
 		); err != nil {
 			return nil, err
 		}

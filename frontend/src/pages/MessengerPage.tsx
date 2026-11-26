@@ -31,7 +31,7 @@ export function MessengerPage() {
 
   const available = me.data?.available ?? false;
   const showUnavailable = me.data !== undefined && !available;
-  const partner = chats.data?.find((chat) => chat.id === chatId)?.partner ?? null;
+  const activeChat = chats.data?.find((chat) => chat.id === chatId);
   const availableCount = useAvailableCount().data ?? 0;
 
   function startChat() {
@@ -163,7 +163,12 @@ export function MessengerPage() {
               </Stack>
             </Center>
           ) : (
-            <MessageThread key={chatId} chatId={chatId} partner={partner} />
+            <MessageThread
+              key={chatId}
+              chatId={chatId}
+              partner={activeChat?.partner ?? null}
+              partnerCursor={activeChat?.partnerLastReadMessageId ?? 0}
+            />
           )}
         </Box>
       </Flex>

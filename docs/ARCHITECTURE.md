@@ -6,7 +6,7 @@
 |---|---|
 | Identity | Sign in with Google only. Accept ID tokens with `hd == ALLOWED_DOMAIN` and `email_verified == true` (checked server-side from the token claims). Account is created on first login. Name + avatar come from Google; the name is not editable. No passwords. |
 | Gate | Company Google domain; Basic Auth is off in both environments (`BASIC_AUTH_MODE=off`); only exact `off` disables it, all other values keep it on. `/healthz` and `/ws` are exempt from Basic Auth (`/ws` still needs a session cookie and the app's own `Origin`; see `docs/SECURITY.md`). |
-| Profile | Editable avatar, nickname, hometown, multi-line bio, one-line status, interests (hobby, music, movies, other), and up to 5 extra photos shown in a lightbox. |
+| Profile | Editable avatar, nickname, hometown, multi-line bio, one-line status, interests (hobby, music, movies, other), and up to 5 extra photos shown in a lightbox. Any signed-in colleague can like or comment on a photo. The photo owner and the comment author can delete a comment. |
 | Wall | Anyone can post on anyone's wall: text and/or a drawing. Replies are 2 levels max (a reply to a reply attaches to the root). The wall owner can delete any post on their wall. |
 | Anonymous posts | Author is stored. It is visible **only to the wall owner**; everyone else sees "Anonymous". The poster is warned in the UI. Wall owners can turn off new anonymous posts and replies by visitors (403 `anonymous_disabled`). The default is on. Existing anonymous posts and the wall owner’s ability to post anonymously are unaffected. |
 | Search | By email or name prefix, from the 4th character, max 10 results. |
@@ -53,6 +53,18 @@ Sessions are server-side (`alexedwards/scs` + the `sessions` table). The cookie 
 Sign-in is Google OIDC: `GET /auth/google/start` redirects to the issuer with PKCE, nonce, and `hd=ALLOWED_DOMAIN`. `GET /auth/google/callback` checks the ID token (`coreos/go-oidc`: audience, issuer, nonce) and accepts it only when `email_verified` is true and `hd` equals `ALLOWED_DOMAIN` (the claim, not the authorize URL). The user is upserted by `sub` (email, name, `last_login_at`). The first login stores `picture` as the avatar through `internal/upload` when the download works. The browser is sent to `next` only when that value is a path starting with `/` and not `//`; otherwise `/`. Failures redirect to `/login?error=domain|unverified|state|provider`. State, nonce, and the PKCE verifier sit in the `arc_oidc` cookie for 10 minutes.
 
 `make dev` also starts `backend/cmd/mockoidc` on 127.0.0.1:9999. The issuer is `http://localhost:9999/oidc` (mockoidc's fixed base path). `.env.dev.example` sets `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `ALLOWED_DOMAIN` for that process, and `APP_BASE_URL` to vite's origin (`http://localhost:5173`).
+
+## Photo interactions
+
+`photo_likes` has one row per photo and user. `photo_comments` stores the author, plain text and UTC creation time. Both tables cascade when a photo is deleted or a participating account is hard-deleted.
+
+`GET /api/users/{id}` includes `likeCount`, `likedByMe` and `commentCount` for each photo. `PUT` and `DELETE /api/photos/{id}/like` are idempotent and return the current like state and total. `GET /api/photos/{id}/comments` returns up to 200 of the newest comments, displayed oldest first. `POST` to that path accepts `{body}` with 1–1000 Unicode code points after trimming. `DELETE /api/photos/{id}/comments/{commentId}` is limited to the author or photo owner. All routes require a session. Per-user limits are 60 like/unlike requests and 20 comment create/delete requests per sliding minute.
+
+## Chat read receipts
+
+`GET /api/chats`, the `chat.new` chat summary, and each `GET /api/chats/{id}/messages` page expose `partnerLastReadMessageId` (0 when the partner has no cursor). The message page includes it next to `messages`. An own saved text message is read when its id is at or below that cursor.
+
+`POST /api/chats/{id}/read` uses the existing monotonic `chat_reads` cursor. When it advances, the server sends only the reader’s partner a `chat.read` WebSocket event with `{chatId, lastReadMessageId}` after commit. The messenger acknowledges messages while its thread is open and the document is visible.
 
 ## Chat encryption at rest
 

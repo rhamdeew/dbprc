@@ -44,6 +44,8 @@ type interestsJSON struct {
 type photoJSON struct {
 	ID  int64  `json:"id"`
 	URL string `json:"url"`
+	photoLikesJSON
+	CommentCount int64 `json:"commentCount"`
 }
 
 type profileJSON struct {
@@ -95,6 +97,7 @@ func Routes(mux *http.ServeMux, log *slog.Logger, sessions *session.Manager, dat
 	mux.Handle("POST /api/me/avatar", guard(httpx.LimitBody(uploadBody)(httpx.RateLimit(uploadLimit)(http.HandlerFunc(h.postAvatar)))))
 	mux.Handle("POST /api/me/photos", guard(httpx.LimitBody(uploadBody)(httpx.RateLimit(uploadLimit)(http.HandlerFunc(h.postPhoto)))))
 	mux.Handle("DELETE /api/me/photos/{id}", guard(httpx.LimitBody(httpx.SmallBodyLimit)(http.HandlerFunc(h.deletePhoto))))
+	h.photoRoutes(mux, guard)
 }
 
 func (h *handlers) get(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +137,7 @@ func (h *handlers) get(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
 		return
 	}
-	rows, err := q.ListUserPhotos(r.Context(), id)
+	rows, err := q.ListUserPhotos(r.Context(), sqlc.ListUserPhotosParams{ViewerID: me.ID, UserID: id})
 	if err != nil {
 		h.log.Error("profile photos", "err", err, "user_id", id)
 		httpx.WriteError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
@@ -143,7 +146,11 @@ func (h *handlers) get(w http.ResponseWriter, r *http.Request) {
 
 	photos := make([]photoJSON, 0, len(rows))
 	for _, row := range rows {
-		photos = append(photos, photoJSON{ID: row.ID, URL: upload.URL(row.Path)})
+		photos = append(photos, photoJSON{
+			ID: row.ID, URL: upload.URL(row.Path),
+			photoLikesJSON: photoLikesJSON{LikeCount: row.LikeCount, LikedByMe: row.LikedByMe != 0},
+			CommentCount:   row.CommentCount,
+		})
 	}
 	httpx.WriteJSON(w, http.StatusOK, profileJSON{
 		profileFieldsJSON: profileFieldsJSON{Nickname: user.Nickname, Hometown: user.Hometown, About: user.About},

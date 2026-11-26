@@ -13,11 +13,8 @@ const advanceChatRead = `-- name: AdvanceChatRead :one
 INSERT INTO chat_reads (chat_id, user_id, last_read_message_id)
 VALUES (?, ?, ?)
 ON CONFLICT (chat_id, user_id) DO UPDATE SET
-    last_read_message_id = CASE
-        WHEN excluded.last_read_message_id > chat_reads.last_read_message_id
-        THEN excluded.last_read_message_id
-        ELSE chat_reads.last_read_message_id
-    END
+    last_read_message_id = excluded.last_read_message_id
+WHERE excluded.last_read_message_id > chat_reads.last_read_message_id
 RETURNING last_read_message_id
 `
 
@@ -27,7 +24,7 @@ type AdvanceChatReadParams struct {
 	LastReadMessageID int64
 }
 
-// Monotonic: a smaller id leaves the stored cursor where it is.
+// A repeated or older id returns no row and leaves the cursor unchanged.
 func (q *Queries) AdvanceChatRead(ctx context.Context, arg AdvanceChatReadParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, advanceChatRead, arg.ChatID, arg.UserID, arg.LastReadMessageID)
 	var last_read_message_id int64
@@ -67,6 +64,24 @@ func (q *Queries) GetChatByID(ctx context.Context, id int64) (Chat, error) {
 		&i.LastMessageAt,
 	)
 	return i, err
+}
+
+const getChatRead = `-- name: GetChatRead :one
+SELECT CAST(COALESCE((
+    SELECT last_read_message_id FROM chat_reads WHERE chat_id = ? AND user_id = ?
+), 0) AS INTEGER) AS last_read_message_id
+`
+
+type GetChatReadParams struct {
+	ChatID int64
+	UserID int64
+}
+
+func (q *Queries) GetChatRead(ctx context.Context, arg GetChatReadParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getChatRead, arg.ChatID, arg.UserID)
+	var last_read_message_id int64
+	err := row.Scan(&last_read_message_id)
+	return last_read_message_id, err
 }
 
 const getMessageInChat = `-- name: GetMessageInChat :one
@@ -179,7 +194,8 @@ SELECT
             WHERE cr.chat_id = c.id AND cr.user_id = me.id
           ), 0)
           AND (m.sender_id IS NULL OR m.sender_id != me.id)
-    ) AS unread_count
+    ) AS unread_count,
+    CAST(COALESCE(pr.last_read_message_id, 0) AS INTEGER) AS partner_last_read_message_id
 FROM users AS me
 JOIN chats AS c
   ON c.user_low = me.id OR c.user_high = me.id
@@ -188,6 +204,8 @@ JOIN users AS partner
     WHEN c.user_low = me.id THEN c.user_high
     ELSE c.user_low
   END
+LEFT JOIN chat_reads AS pr
+  ON pr.chat_id = c.id AND pr.user_id = partner.id
 LEFT JOIN messages AS lm
   ON lm.chat_id = c.id
  AND lm.id = (
@@ -200,15 +218,16 @@ ORDER BY c.last_message_at DESC, c.id DESC
 `
 
 type ListChatsForUserRow struct {
-	ID                int64
-	PartnerID         int64
-	PartnerName       string
-	PartnerAvatarPath *string
-	LastMessageID     *int64
-	LastBody          *string
-	LastKind          *string
-	LastCreatedAt     *string
-	UnreadCount       int64
+	ID                       int64
+	PartnerID                int64
+	PartnerName              string
+	PartnerAvatarPath        *string
+	LastMessageID            *int64
+	LastBody                 *string
+	LastKind                 *string
+	LastCreatedAt            *string
+	UnreadCount              int64
+	PartnerLastReadMessageID int64
 }
 
 func (q *Queries) ListChatsForUser(ctx context.Context, id int64) ([]ListChatsForUserRow, error) {
@@ -230,6 +249,7 @@ func (q *Queries) ListChatsForUser(ctx context.Context, id int64) ([]ListChatsFo
 			&i.LastKind,
 			&i.LastCreatedAt,
 			&i.UnreadCount,
+			&i.PartnerLastReadMessageID,
 		); err != nil {
 			return nil, err
 		}

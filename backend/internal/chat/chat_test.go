@@ -490,7 +490,8 @@ func TestMessagesPaginationAndValidation(t *testing.T) {
 }
 
 func TestReadCursorIsMonotonic(t *testing.T) {
-	srv := newServer(t, nil)
+	rec := &recorder{}
+	srv := newServer(t, rec)
 	database := testutil.Database(t, srv)
 	me := testutil.CreateUser(t, database, testutil.WithName("Me"))
 	other := testutil.CreateUser(t, database, testutil.WithName("Other"))
@@ -501,6 +502,7 @@ func TestReadCursorIsMonotonic(t *testing.T) {
 	foreignChat := testutil.CreateChat(t, database, testutil.WithChatUsers(me.ID, testutil.CreateUser(t, database, testutil.WithAvailable(false)).ID))
 	foreign := testutil.CreateMessage(t, database, testutil.WithChat(foreignChat.ID), testutil.WithSender(me.ID), testutil.WithMessageBody("nope"))
 	client := testutil.LoginAs(t, srv, me)
+	partner := testutil.LoginAs(t, srv, other)
 
 	list := getChats(t, client, srv)
 	var mine chatView
@@ -512,6 +514,8 @@ func TestReadCursorIsMonotonic(t *testing.T) {
 	if mine.UnreadCount != 2 {
 		t.Fatalf("unread %d", mine.UnreadCount)
 	}
+	assertCursor(t, mine.PartnerLastReadMessageID, 0)
+	assertCursor(t, getMessages(t, partner, srv, row.ID, "").PartnerLastReadMessageID, 0)
 
 	cursor := readUpTo(t, client, srv, row.ID, first.ID)
 	if cursor != first.ID || unread(t, client, srv, row.ID) != 1 {
@@ -521,6 +525,9 @@ func TestReadCursorIsMonotonic(t *testing.T) {
 	if again != first.ID || unread(t, client, srv, row.ID) != 1 {
 		t.Fatalf("backwards cursor %d", again)
 	}
+	assertCursor(t, getChats(t, partner, srv)[0].PartnerLastReadMessageID, first.ID)
+	assertCursor(t, getMessages(t, partner, srv, row.ID, "before="+itoa(second.ID)).PartnerLastReadMessageID, first.ID)
+	assertCursor(t, getMessages(t, client, srv, row.ID, "").PartnerLastReadMessageID, 0)
 	cursor = readUpTo(t, client, srv, row.ID, second.ID)
 	if cursor != second.ID || unread(t, client, srv, row.ID) != 0 {
 		t.Fatalf("caught up cursor %d unread %d", cursor, unread(t, client, srv, row.ID))
@@ -549,6 +556,13 @@ func TestReadCursorIsMonotonic(t *testing.T) {
 		t.Fatalf("stored %d want %d", stored, second.ID)
 	}
 
+	rec.mu.Lock()
+	reads := append([]notifiedRead(nil), rec.reads...)
+	rec.mu.Unlock()
+	if len(reads) != 2 || reads[0] != (notifiedRead{row.ID, first.ID, other.ID}) || reads[1] != (notifiedRead{row.ID, second.ID, other.ID}) {
+		t.Fatalf("forward reads for the partner: %+v", reads)
+	}
+
 	code, raw = do(t, client, http.MethodPost, srv.URL+"/api/chats/random", nil)
 	if code != http.StatusCreated {
 		t.Fatalf("rematch %d %s", code, raw)
@@ -563,6 +577,16 @@ func TestReadCursorIsMonotonic(t *testing.T) {
 	}
 	if got := readUpTo(t, client, srv, row.ID, system.ID); got != system.ID || unread(t, client, srv, row.ID) != 0 {
 		t.Fatalf("read system %d unread %d", got, unread(t, client, srv, row.ID))
+	}
+}
+
+func assertCursor(t *testing.T, got *int64, want int64) {
+	t.Helper()
+	if got == nil {
+		t.Fatal("missing partnerLastReadMessageId")
+	}
+	if *got != want {
+		t.Fatalf("partnerLastReadMessageId %d, want %d", *got, want)
 	}
 }
 
@@ -692,10 +716,11 @@ type lastView struct {
 }
 
 type chatView struct {
-	ID          int64       `json:"id"`
-	Partner     partnerView `json:"partner"`
-	LastMessage *lastView   `json:"lastMessage"`
-	UnreadCount int64       `json:"unreadCount"`
+	ID                       int64       `json:"id"`
+	Partner                  partnerView `json:"partner"`
+	LastMessage              *lastView   `json:"lastMessage"`
+	UnreadCount              int64       `json:"unreadCount"`
+	PartnerLastReadMessageID *int64      `json:"partnerLastReadMessageId"`
 }
 
 type randomView struct {
@@ -712,7 +737,8 @@ type messageView struct {
 }
 
 type messagesView struct {
-	Messages []messageView `json:"messages"`
+	Messages                 []messageView `json:"messages"`
+	PartnerLastReadMessageID *int64        `json:"partnerLastReadMessageId"`
 }
 
 type readView struct {
@@ -733,10 +759,17 @@ type notifiedMsg struct {
 	ids []int64
 }
 
+type notifiedRead struct {
+	chatID    int64
+	cursor    int64
+	partnerID int64
+}
+
 type recorder struct {
 	mu    sync.Mutex
 	chats []notifiedChat
 	msgs  []notifiedMsg
+	reads []notifiedRead
 }
 
 func (r *recorder) ChatCreated(c chat.Chat, ids []int64) {
@@ -749,6 +782,12 @@ func (r *recorder) MessageCreated(m chat.Message, ids []int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.msgs = append(r.msgs, notifiedMsg{msg: m, ids: append([]int64(nil), ids...)})
+}
+
+func (r *recorder) ReadAdvanced(chatID, lastReadMessageID, partnerID int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.reads = append(r.reads, notifiedRead{chatID, lastReadMessageID, partnerID})
 }
 
 func (r *recorder) snapshot() ([]notifiedChat, []notifiedMsg) {
