@@ -28,6 +28,7 @@ describe('realtime helpers', () => {
       partner: { id: 3, name: 'Grace Hopper', avatarUrl: null },
       lastMessage: { body: 'hi', kind: 'text', createdAt: '2026-11-11T12:00:00Z' },
       unreadCount: 1,
+      partnerLastReadMessageId: 0,
     };
     const message = {
       type: 'message.new',
@@ -38,6 +39,9 @@ describe('realtime helpers', () => {
     };
     expect(parseRealtimeEvent(JSON.stringify({ type: 'chat.new', data: chat }))).toEqual({ type: 'chat.new', data: chat });
     expect(parseRealtimeEvent(message)).toEqual(message);
+    const read = { type: 'chat.read', data: { chatId: 5, lastReadMessageId: 8 } };
+    expect(parseRealtimeEvent(read)).toEqual(read);
+    expect(parseRealtimeEvent({ ...read, data: { ...read.data, lastReadMessageId: 0 } })).toBeNull();
     expect(parseRealtimeEvent('not-json')).toBeNull();
     expect(parseRealtimeEvent('{')).toBeNull();
     expect(parseRealtimeEvent(null)).toBeNull();

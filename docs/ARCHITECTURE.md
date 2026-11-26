@@ -54,6 +54,12 @@ Sign-in is Google OIDC: `GET /auth/google/start` redirects to the issuer with PK
 
 `make dev` also starts `backend/cmd/mockoidc` on 127.0.0.1:9999. The issuer is `http://localhost:9999/oidc` (mockoidc's fixed base path). `.env.dev.example` sets `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `ALLOWED_DOMAIN` for that process, and `APP_BASE_URL` to vite's origin (`http://localhost:5173`).
 
+## Chat read receipts
+
+`GET /api/chats`, the `chat.new` chat summary, and each `GET /api/chats/{id}/messages` page expose `partnerLastReadMessageId` (0 when the partner has no cursor). The message page includes it next to `messages`. An own saved text message is read when its id is at or below that cursor.
+
+`POST /api/chats/{id}/read` uses the existing monotonic `chat_reads` cursor. When it advances, the server sends only the reader’s partner a `chat.read` WebSocket event with `{chatId, lastReadMessageId}` after commit. The messenger acknowledges messages while its thread is open and the document is visible.
+
 ## Chat encryption at rest
 
 `MESSAGE_KEY` is required in every environment: base64 of exactly 32 random bytes. Optional `MESSAGE_KEY_OLD` has the same format. `internal/msgcrypt` uses AES-256-GCM with a fresh 12-byte nonce per message and the decimal chat id as additional authenticated data. `messages.body` stores `v1:` followed by base64(nonce + ciphertext + tag), for text and system messages. Writes use the current key; reads try current then old. API responses, chat previews and WebSocket events contain decrypted text. A damaged, plaintext or otherwise unreadable row becomes `[message unavailable]`; logs contain only message/chat ids. Existing rows are not migrated. Wall posts remain plaintext.

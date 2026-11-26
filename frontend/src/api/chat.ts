@@ -1,4 +1,5 @@
 import {
+  replaceEqualDeep,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -28,6 +29,7 @@ export type ChatSummary = {
   partner: ChatPartner;
   lastMessage: ChatLastMessage | null;
   unreadCount: number;
+  partnerLastReadMessageId: number;
 };
 
 /** One row of `GET /api/chats/{id}/messages`. `senderId` is null for a system line. */
@@ -56,6 +58,7 @@ export const messagePageSize = 50;
 type MessagePage = {
   messages: ChatMessage[];
   hasMore: boolean;
+  partnerLastReadMessageId: number;
 };
 
 export type MessageCache = InfiniteData<MessagePage, number>;
@@ -70,6 +73,18 @@ export function useChats() {
   return useQuery({
     queryKey: chatsKey,
     queryFn: () => api<ChatSummary[]>('/api/chats'),
+    structuralSharing: (previous, data) => {
+      const incoming = data as ChatSummary[];
+      const cursors = new Map((previous as ChatSummary[] | undefined)?.map(
+        (chat) => [chat.id, chat.partnerLastReadMessageId ?? 0],
+      ));
+      return replaceEqualDeep(previous, incoming.map((chat) => {
+        const cursor = cursors.get(chat.id) ?? 0;
+        return cursor > (chat.partnerLastReadMessageId ?? 0)
+          ? { ...chat, partnerLastReadMessageId: cursor }
+          : chat;
+      }));
+    },
     retry: false,
   });
 }
@@ -98,6 +113,20 @@ export function useMessages(chatId: number | null) {
     queryKey: messagesKey(chatId ?? 0),
     queryFn: ({ pageParam }) => fetchMessages(chatId ?? 0, pageParam),
     initialPageParam: 0,
+    // A receipt can arrive while a page is in flight. Keep the greatest cursor seen for the thread.
+    structuralSharing: (previous, data) => {
+      const incoming = data as MessageCache;
+      const latest = incoming.pages[0];
+      if (!latest) return replaceEqualDeep(previous, incoming);
+      const cursor = incoming.pages.reduce(
+        (highest, page) => Math.max(highest, page.partnerLastReadMessageId),
+        (previous as MessageCache | undefined)?.pages[0]?.partnerLastReadMessageId ?? 0,
+      );
+      const updated = cursor > latest.partnerLastReadMessageId
+        ? { ...incoming, pages: [{ ...latest, partnerLastReadMessageId: cursor }, ...incoming.pages.slice(1)] }
+        : incoming;
+      return replaceEqualDeep(previous, updated);
+    },
     getNextPageParam: (last) => {
       if (!last.hasMore) return undefined;
       return last.messages[0]?.id;
@@ -110,9 +139,9 @@ export function useMessages(chatId: number | null) {
 async function fetchMessages(chatId: number, before: number): Promise<MessagePage> {
   const params = new URLSearchParams({ limit: String(messagePageSize) });
   if (before > 0) params.set('before', String(before));
-  const page = await api<{ messages: ChatMessage[] }>(`/api/chats/${chatId}/messages?${params.toString()}`);
+  const page = await api<{ messages: ChatMessage[]; partnerLastReadMessageId: number }>(`/api/chats/${chatId}/messages?${params.toString()}`);
   const messages = Array.isArray(page.messages) ? page.messages : [];
-  return { messages, hasMore: messages.length === messagePageSize };
+  return { messages, hasMore: messages.length === messagePageSize, partnerLastReadMessageId: page.partnerLastReadMessageId ?? 0 };
 }
 
 /** Oldest page first. Page 0 in the cache is the latest window. */
@@ -282,7 +311,7 @@ export function zeroUnread(list: ChatSummary[] | undefined, chatId: number): Cha
 function mapLatest(current: MessageCache | undefined, update: (messages: ChatMessage[]) => ChatMessage[]): MessageCache {
   if (!current || current.pages.length === 0) {
     return {
-      pages: [{ messages: update([]), hasMore: false }],
+      pages: [{ messages: update([]), hasMore: false, partnerLastReadMessageId: 0 }],
       pageParams: [0],
     };
   }
@@ -339,4 +368,20 @@ export function applyMessageToCache(queryClient: QueryClient, chatId: number, me
     return;
   }
   queryClient.setQueryData<MessageCache>(messagesKey(chatId), ingestMessage(existing, message));
+}
+
+export function applyReadToCache(queryClient: QueryClient, chatId: number, lastReadMessageId: number) {
+  queryClient.setQueryData<ChatSummary[]>(chatsKey, (list) => list?.map((chat) =>
+    chat.id === chatId && lastReadMessageId > (chat.partnerLastReadMessageId ?? 0)
+      ? { ...chat, partnerLastReadMessageId: lastReadMessageId }
+      : chat,
+  ));
+  queryClient.setQueryData<MessageCache>(messagesKey(chatId), (current) => {
+    const latest = current?.pages[0];
+    if (!current || !latest || lastReadMessageId <= latest.partnerLastReadMessageId) return current;
+    return {
+      ...current,
+      pages: [{ ...latest, partnerLastReadMessageId: lastReadMessageId }, ...current.pages.slice(1)],
+    };
+  });
 }

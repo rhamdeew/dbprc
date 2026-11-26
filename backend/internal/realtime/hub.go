@@ -2,7 +2,7 @@
 //
 // GET /ws requires a session. The upgrade runs only after that check.
 // The hub implements chat.Notifier: each connected member receives
-// chat.new and message.new after the write commits.
+// chat.new and message.new after commit. Only the partner receives chat.read.
 package realtime
 
 import (
@@ -70,6 +70,11 @@ type messageEvent struct {
 	Message messageJSON `json:"message"`
 }
 
+type readEvent struct {
+	ChatID            int64 `json:"chatId"`
+	LastReadMessageID int64 `json:"lastReadMessageId"`
+}
+
 // JSON shapes match the chat REST objects so a client can use one type.
 type partnerJSON struct {
 	ID        int64   `json:"id"`
@@ -84,10 +89,11 @@ type lastMessageJSON struct {
 }
 
 type chatJSON struct {
-	ID          int64            `json:"id"`
-	Partner     partnerJSON      `json:"partner"`
-	LastMessage *lastMessageJSON `json:"lastMessage"`
-	UnreadCount int64            `json:"unreadCount"`
+	ID                       int64            `json:"id"`
+	Partner                  partnerJSON      `json:"partner"`
+	LastMessage              *lastMessageJSON `json:"lastMessage"`
+	UnreadCount              int64            `json:"unreadCount"`
+	PartnerLastReadMessageID int64            `json:"partnerLastReadMessageId"`
 }
 
 type messageJSON struct {
@@ -230,6 +236,19 @@ func (h *Hub) MessageCreated(msg chat.Message, userIDs []int64) {
 	for _, id := range userIDs {
 		h.publish(id, payload)
 	}
+}
+
+// ReadAdvanced sends chat.read to the reader's partner after a cursor advances.
+func (h *Hub) ReadAdvanced(chatID, lastReadMessageID, partnerID int64) {
+	payload, err := json.Marshal(event{
+		Type: "chat.read",
+		Data: readEvent{ChatID: chatID, LastReadMessageID: lastReadMessageID},
+	})
+	if err != nil {
+		h.log.Error("ws chat.read", "err", err, "chat_id", chatID)
+		return
+	}
+	h.publish(partnerID, payload)
 }
 
 // ServeHTTP upgrades an authenticated request. The caller must have already
@@ -379,10 +398,11 @@ func (h *Hub) toChatJSON(row sqlc.ListChatsForUserRow) chatJSON {
 		last = &lastMessageJSON{Body: h.crypt.Body(h.log, *row.LastMessageID, row.ID, *row.LastBody), Kind: *row.LastKind, CreatedAt: *row.LastCreatedAt}
 	}
 	return chatJSON{
-		ID:          row.ID,
-		Partner:     partnerJSON{ID: row.PartnerID, Name: row.PartnerName, AvatarURL: avatarURL(row.PartnerAvatarPath)},
-		LastMessage: last,
-		UnreadCount: row.UnreadCount,
+		ID:                       row.ID,
+		Partner:                  partnerJSON{ID: row.PartnerID, Name: row.PartnerName, AvatarURL: avatarURL(row.PartnerAvatarPath)},
+		LastMessage:              last,
+		UnreadCount:              row.UnreadCount,
+		PartnerLastReadMessageID: row.PartnerLastReadMessageID,
 	}
 }
 

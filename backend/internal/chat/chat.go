@@ -60,13 +60,15 @@ type Message struct {
 type Notifier interface {
 	ChatCreated(chat Chat, userIDs []int64)
 	MessageCreated(msg Message, userIDs []int64)
+	ReadAdvanced(chatID, lastReadMessageID, partnerID int64)
 }
 
 // NopNotifier discards events.
 type NopNotifier struct{}
 
-func (NopNotifier) ChatCreated(Chat, []int64)       {}
-func (NopNotifier) MessageCreated(Message, []int64) {}
+func (NopNotifier) ChatCreated(Chat, []int64)        {}
+func (NopNotifier) MessageCreated(Message, []int64)  {}
+func (NopNotifier) ReadAdvanced(int64, int64, int64) {}
 
 type availabilityJSON struct {
 	Available bool `json:"available"`
@@ -89,10 +91,11 @@ type lastMessageJSON struct {
 }
 
 type chatJSON struct {
-	ID          int64            `json:"id"`
-	Partner     partnerJSON      `json:"partner"`
-	LastMessage *lastMessageJSON `json:"lastMessage"`
-	UnreadCount int64            `json:"unreadCount"`
+	ID                       int64            `json:"id"`
+	Partner                  partnerJSON      `json:"partner"`
+	LastMessage              *lastMessageJSON `json:"lastMessage"`
+	UnreadCount              int64            `json:"unreadCount"`
+	PartnerLastReadMessageID int64            `json:"partnerLastReadMessageId"`
 }
 
 type randomJSON struct {
@@ -109,7 +112,8 @@ type messageJSON struct {
 }
 
 type messagesJSON struct {
-	Messages []messageJSON `json:"messages"`
+	Messages                 []messageJSON `json:"messages"`
+	PartnerLastReadMessageID int64         `json:"partnerLastReadMessageId"`
 }
 
 type readJSON struct {
@@ -278,7 +282,8 @@ func (h *handlers) listMessages(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = tx.Rollback() }()
 
 	q := sqlc.New(tx)
-	if _, err := loadMember(r.Context(), q, chatID, me.ID); err != nil {
+	row, err := loadMember(r.Context(), q, chatID, me.ID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, errNotMember) {
 			httpx.WriteError(w, http.StatusNotFound, "not_found", "Chat not found.")
 			return
@@ -305,7 +310,13 @@ func (h *handlers) listMessages(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, messagesJSON{Messages: page})
+	partnerCursor, err := q.GetChatRead(r.Context(), sqlc.GetChatReadParams{ChatID: chatID, UserID: partnerID(row, me.ID)})
+	if err != nil {
+		h.log.Error("load partner cursor", "err", err, "chat_id", chatID, "user_id", me.ID)
+		httpx.WriteError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, messagesJSON{Messages: page, PartnerLastReadMessageID: partnerCursor})
 }
 
 func (h *handlers) postMessage(w http.ResponseWriter, r *http.Request) {
@@ -360,10 +371,14 @@ func (h *handlers) markRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cursor, status, err := h.advanceRead(r.Context(), me.ID, chatID, raw)
+	result, err := h.advanceRead(r.Context(), me.ID, chatID, raw)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, errNotMember) {
 			httpx.WriteError(w, http.StatusNotFound, "not_found", "Chat not found.")
+			return
+		}
+		if errors.Is(err, errInvalidRead) {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid", "Check the message and try again.")
 			return
 		}
 		if errors.Is(err, errNoMessage) {
@@ -374,11 +389,10 @@ func (h *handlers) markRead(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
 		return
 	}
-	if status != 0 {
-		httpx.WriteError(w, http.StatusBadRequest, "invalid", "Check the message and try again.")
-		return
+	if result.advanced {
+		h.notifier.ReadAdvanced(chatID, result.cursor, result.partnerID)
 	}
-	httpx.WriteJSON(w, http.StatusOK, readJSON{LastMessageID: cursor})
+	httpx.WriteJSON(w, http.StatusOK, readJSON{LastMessageID: result.cursor})
 }
 
 // insertMessage stores one text line. The writer transaction is finished
@@ -422,43 +436,61 @@ func (h *handlers) insertMessage(ctx context.Context, userID, chatID int64, raw 
 	return h.decryptMessage(stored), chatRow, "", "", nil
 }
 
-// advanceRead moves the cursor when messageID is newer. status 400 means the
-// body was rejected. The transaction is finished before return.
-func (h *handlers) advanceRead(ctx context.Context, userID, chatID int64, raw []byte) (int64, int, error) {
+type readResult struct {
+	cursor    int64
+	partnerID int64
+	advanced  bool
+}
+
+// advanceRead moves the cursor when messageID is newer and finishes the transaction before return.
+func (h *handlers) advanceRead(ctx context.Context, userID, chatID int64, raw []byte) (readResult, error) {
 	tx, err := h.db.Writer().BeginTx(ctx, nil)
 	if err != nil {
-		return 0, 0, err
+		return readResult{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	q := sqlc.New(tx)
-	if _, err := loadMember(ctx, q, chatID, userID); err != nil {
-		return 0, 0, err
+	row, err := loadMember(ctx, q, chatID, userID)
+	if err != nil {
+		return readResult{}, err
 	}
 	messageID, ok := decodeRead(raw)
 	if !ok {
-		return 0, http.StatusBadRequest, nil
+		return readResult{}, errInvalidRead
 	}
 	if _, err := q.GetMessageInChat(ctx, sqlc.GetMessageInChatParams{ID: messageID, ChatID: chatID}); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return 0, 0, errNoMessage
+			return readResult{}, errNoMessage
 		}
-		return 0, 0, err
+		return readResult{}, err
 	}
 	cursor, err := q.AdvanceChatRead(ctx, sqlc.AdvanceChatReadParams{
 		ChatID:            chatID,
 		UserID:            userID,
 		LastReadMessageID: messageID,
 	})
+	if errors.Is(err, sql.ErrNoRows) {
+		cursor, err := q.GetChatRead(ctx, sqlc.GetChatReadParams{ChatID: chatID, UserID: userID})
+		return readResult{cursor: cursor}, err
+	}
 	if err != nil {
-		return 0, 0, err
+		return readResult{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, 0, err
+		return readResult{}, err
 	}
-	return cursor, 0, nil
+	return readResult{cursor: cursor, partnerID: partnerID(row, userID), advanced: true}, nil
 }
 
+func partnerID(row sqlc.Chat, memberID int64) int64 {
+	if row.UserLow == memberID {
+		return row.UserHigh
+	}
+	return row.UserLow
+}
+
+var errInvalidRead = errors.New("invalid read cursor")
 var errNotMember = errors.New("not a member")
 var errNoMessage = errors.New("message not in chat")
 
@@ -499,10 +531,11 @@ func (h *handlers) toChatJSON(row sqlc.ListChatsForUserRow) chatJSON {
 		last = &lastMessageJSON{Body: h.crypt.Body(h.log, *row.LastMessageID, row.ID, *row.LastBody), Kind: *row.LastKind, CreatedAt: *row.LastCreatedAt}
 	}
 	return chatJSON{
-		ID:          row.ID,
-		Partner:     partnerJSON{ID: row.PartnerID, Name: row.PartnerName, AvatarURL: avatarURL(row.PartnerAvatarPath)},
-		LastMessage: last,
-		UnreadCount: row.UnreadCount,
+		ID:                       row.ID,
+		Partner:                  partnerJSON{ID: row.PartnerID, Name: row.PartnerName, AvatarURL: avatarURL(row.PartnerAvatarPath)},
+		LastMessage:              last,
+		UnreadCount:              row.UnreadCount,
+		PartnerLastReadMessageID: row.PartnerLastReadMessageID,
 	}
 }
 
