@@ -331,7 +331,7 @@ func TestPhotos(t *testing.T) {
 			t.Fatalf("photo %d %+v want %+v", i, photo, photos[i])
 		}
 		item, ok := raw["photos"].([]any)[i].(map[string]any)
-		if !ok || len(item) != 2 {
+		if !ok || len(item) != 5 {
 			t.Fatalf("photo keys %#v", raw["photos"])
 		}
 	}
@@ -516,8 +516,11 @@ type interestsBody struct {
 }
 
 type photoBody struct {
-	ID  int64  `json:"id"`
-	URL string `json:"url"`
+	ID           int64  `json:"id"`
+	URL          string `json:"url"`
+	LikeCount    int64  `json:"likeCount"`
+	LikedByMe    bool   `json:"likedByMe"`
+	CommentCount int64  `json:"commentCount"`
 }
 
 type avatarBody struct {
