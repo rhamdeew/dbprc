@@ -221,6 +221,52 @@ test('Alice edits an interest, uploads a photo, and opens the lightbox', async (
   await expect(alicePage.getByRole('dialog', { name: 'Lightbox' })).toBeHidden();
 });
 
+test('Bob likes and comments on Alice’s photo and Alice removes the comment', async () => {
+  const originalViewport = bobPage.viewportSize();
+  await bobPage.setViewportSize({ width: 390, height: 844 });
+  try {
+    await bobPage.goto(aliceProfileURL);
+    await bobPage.getByRole('button', { name: 'Open photo 1' }).click();
+    const viewer = bobPage.getByRole('dialog', { name: 'Lightbox' });
+    const image = viewer.getByRole('img', { name: 'Photo 1 of 1' });
+    const panel = viewer.getByRole('region', { name: 'Photo reactions and comments' });
+    await expect(image).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Comment', exact: true })).toBeEnabled();
+    await expect.poll(async () => {
+      const photoRect = await image.boundingBox();
+      const panelRect = await panel.boundingBox();
+      return Boolean(photoRect && panelRect && photoRect.y + photoRect.height <= panelRect.y + 1);
+    }).toBe(true);
+    await expect.poll(() => panel.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+    await panel.getByRole('button', { name: 'Like', exact: true }).click();
+    await expect(panel.getByRole('button', { name: 'Unlike' })).toBeEnabled();
+    await expect(panel.getByLabel('1 like')).toBeVisible();
+    const body = `Hello Alice!\n${'great'.repeat(40)}`;
+    await panel.getByRole('textbox', { name: 'Write a comment' }).fill(body);
+    await panel.getByRole('button', { name: 'Comment', exact: true }).click();
+    await expect(panel.getByRole('textbox', { name: 'Write a comment' })).toHaveValue('');
+    await expect(panel.getByText('great'.repeat(40), { exact: false })).toBeVisible();
+    await expect.poll(() => panel.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+    await viewer.getByRole('button', { name: 'Close' }).click();
+    await expect(bobPage.getByLabel('1 comment')).toBeVisible();
+  } finally {
+    if (originalViewport) await bobPage.setViewportSize(originalViewport);
+  }
+
+  // Opening refetches the summaries even though Alice's profile is still open.
+  await alicePage.getByRole('button', { name: 'Open photo 1' }).click();
+  const viewer = alicePage.getByRole('dialog', { name: 'Lightbox' });
+  await expect(viewer.getByLabel('1 like')).toBeVisible();
+  await expect(viewer.getByRole('link', { name: bob.name })).toBeVisible();
+  await expect(viewer.getByText('Hello Alice!', { exact: false })).toBeVisible();
+  await viewer.getByRole('button', { name: `Delete comment by ${bob.name}` }).click();
+  await expect(viewer.getByText('Hello Alice!', { exact: false })).toHaveCount(0);
+  await expect(viewer.getByRole('heading', { name: 'Comments (0)' })).toBeVisible();
+  await viewer.getByRole('button', { name: 'Close' }).click();
+  await expect(alicePage.getByLabel('1 like')).toBeVisible();
+  await expect(alicePage.getByLabel('1 comment')).toHaveCount(0);
+});
+
 test('Bob posts an anonymous drawing on Alice\'s wall and Alice deletes it', async () => {
   // Mantine Autocomplete exposes a combobox. The visible label is the placeholder.
   const search = bobPage.getByRole('search').getByRole('combobox');

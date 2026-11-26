@@ -1,0 +1,38 @@
+.arc-photo-viewer {
+  --arc-photo-height: 48%;
+}
+
+.arc-photo-viewer .yarl__carousel {
+  align-self: flex-start;
+  height: var(--arc-photo-height);
+}
+
+.arc-photo-viewer .yarl__slide_image {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.arc-photo-viewer .yarl__navigation_prev,
+.arc-photo-viewer .yarl__navigation_next {
+  top: calc(var(--arc-photo-height) / 2);
+}
+
+.arc-photo-viewer .yarl__button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.arc-photo-interactions {
+  position: absolute;
+  inset: var(--arc-photo-height) 0 0;
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+  padding: 12px max(12px, calc((100% - 640px) / 2));
+  overflow: auto;
+  overscroll-behavior: contain;
+  user-select: text;
+}
+
+.arc-photo-interactions button {
+  min-height: 44px;
+}

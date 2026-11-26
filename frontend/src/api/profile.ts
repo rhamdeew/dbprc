@@ -15,6 +15,9 @@ export type Interests = {
 export type ProfilePhoto = {
   id: number;
   url: string;
+  likeCount: number;
+  likedByMe: boolean;
+  commentCount: number;
 };
 
 export type ProfileFields = {
@@ -55,13 +58,13 @@ export function profileKey(id: number) {
 export function useProfile(id: number | null) {
   return useQuery({
     queryKey: profileKey(id ?? 0),
-    queryFn: () => api<Profile>(`/api/users/${id}`),
+    queryFn: ({ signal }) => api<Profile>(`/api/users/${id}`, { signal }),
     enabled: id !== null,
     retry: false,
   });
 }
 
-function writeProfile(queryClient: ReturnType<typeof useQueryClient>, id: number, update: (profile: Profile) => Profile) {
+export function writeProfile(queryClient: ReturnType<typeof useQueryClient>, id: number, update: (profile: Profile) => Profile) {
   queryClient.setQueryData<Profile>(profileKey(id), (current) => (current ? update(current) : current));
 }
 
