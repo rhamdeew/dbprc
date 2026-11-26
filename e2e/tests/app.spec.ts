@@ -248,7 +248,8 @@ test('Bob likes and comments on Alice’s photo and Alice removes the comment', 
     await expect(panel.getByText('great'.repeat(40), { exact: false })).toBeVisible();
     await expect.poll(() => panel.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
     await viewer.getByRole('button', { name: 'Close' }).click();
-    await expect(bobPage.getByLabel('1 comment')).toBeVisible();
+    await expect(viewer).toBeHidden();
+    await expect(bobPage.getByTestId('content').getByLabel('1 comment', { exact: true })).toBeVisible();
   } finally {
     if (originalViewport) await bobPage.setViewportSize(originalViewport);
   }
@@ -263,8 +264,10 @@ test('Bob likes and comments on Alice’s photo and Alice removes the comment', 
   await expect(viewer.getByText('Hello Alice!', { exact: false })).toHaveCount(0);
   await expect(viewer.getByRole('heading', { name: 'Comments (0)' })).toBeVisible();
   await viewer.getByRole('button', { name: 'Close' }).click();
-  await expect(alicePage.getByLabel('1 like')).toBeVisible();
-  await expect(alicePage.getByLabel('1 comment')).toHaveCount(0);
+  await expect(viewer).toBeHidden();
+  const gallery = alicePage.getByTestId('content');
+  await expect(gallery.getByLabel('1 like', { exact: true })).toBeVisible();
+  await expect(gallery.getByLabel('1 comment', { exact: true })).toHaveCount(0);
 });
 
 test('Bob posts an anonymous drawing on Alice\'s wall and Alice deletes it', async () => {
