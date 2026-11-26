@@ -1,20 +1,25 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { describe, expect, it } from 'vitest';
-import type { Interests, Profile } from '../api/profile';
+import type { PhotoComment } from '../api/photos';
+import type { Interests, Profile, ProfilePhoto } from '../api/profile';
 import { member, profileFor } from '../test/fixtures';
 import { render } from '../test/render';
 import { server } from '../test/server';
 import { ProfilePage } from './ProfilePage';
+
+function galleryPhoto(id: number, fields: Partial<ProfilePhoto> = {}): ProfilePhoto {
+  return { id, url: `/uploads/photos/${id}.png`, likeCount: 0, likedByMe: false, commentCount: 0, ...fields };
+}
 
 const colleague = profileFor(
   { ...member, id: 9, name: 'Alan Turing', email: 'alan@corp.test' },
   {
     isMe: false,
     interests: { hobby: 'chess', music: 'jazz', movies: '', other: '' },
-    photos: [{ id: 3, url: '/uploads/photos/3.png' }],
+    photos: [galleryPhoto(3)],
   },
 );
 
@@ -32,6 +37,7 @@ function mockProfile(profile: Profile) {
   server.use(
     http.get('/api/users/:id', () => HttpResponse.json(profile)),
     http.get('/api/users/:id/wall', () => HttpResponse.json({ posts: [] })),
+    http.get('/api/photos/:id/comments', () => HttpResponse.json({ comments: [] })),
   );
 }
 
@@ -50,7 +56,7 @@ describe('profile page', () => {
     mockProfile(
       profileFor(member, {
         interests: { hobby: 'chess', music: '', movies: '', other: '' },
-        photos: [{ id: 3, url: '/uploads/photos/3.png' }],
+        photos: [galleryPhoto(3)],
       }),
     );
     renderProfile(String(member.id));
@@ -188,7 +194,7 @@ describe('profile page', () => {
   });
 
   it('hides Add photo at the 5-photo limit', async () => {
-    const photos = [1, 2, 3, 4, 5].map((id) => ({ id, url: `/uploads/photos/${id}.png` }));
+    const photos = [1, 2, 3, 4, 5].map((id) => galleryPhoto(id));
     mockProfile(profileFor(member, { photos }));
     renderProfile('7');
 
@@ -203,20 +209,26 @@ describe('profile page', () => {
     mockProfile(
       profileFor(member, {
         photos: [
-          { id: 3, url: '/uploads/photos/3.png' },
-          { id: 4, url: '/uploads/photos/4.png' },
+          galleryPhoto(3),
+          galleryPhoto(4),
         ],
       }),
     );
+    server.use(http.get('/api/photos/:id/comments', ({ params }) => HttpResponse.json({
+      comments: [galleryComment(Number(params.id), `Comment on photo ${params.id}`, false)],
+    })));
     renderProfile('7');
 
     await user.click(await screen.findByRole('button', { name: 'Open photo 1' }));
 
     expect(await screen.findByRole('dialog', { name: 'Lightbox' })).toBeInTheDocument();
+    expect(await screen.findByText('Comment on photo 3')).toBeInTheDocument();
     expect(screen.getByRole('group', { name: '1 of 2' })).toBeInTheDocument();
     await user.keyboard('{ArrowRight}');
     expect(await screen.findByRole('group', { name: '2 of 2' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Photo 2 of 2' })).toHaveAttribute('src', '/uploads/photos/4.png');
+    expect(await screen.findByText('Comment on photo 4')).toBeInTheDocument();
+    expect(screen.queryByText('Comment on photo 3')).not.toBeInTheDocument();
   });
 
   it('shows avatar upload progress and the new photo', async () => {
@@ -284,10 +296,10 @@ describe('profile page', () => {
 
   it('adds a photo and deletes it after confirm', async () => {
     const user = userEvent.setup();
-    mockProfile(profileFor(member, { photos: [{ id: 3, url: '/uploads/photos/3.png' }] }));
+    mockProfile(profileFor(member, { photos: [galleryPhoto(3)] }));
     let deleted = 0;
     server.use(
-      http.post('/api/me/photos', () => HttpResponse.json({ id: 8, url: '/uploads/photos/8.png' }, { status: 201 })),
+      http.post('/api/me/photos', () => HttpResponse.json(galleryPhoto(8), { status: 201 })),
       http.delete('/api/me/photos/:id', ({ params }) => {
         deleted += 1;
         expect(params.id).toBe('3');
@@ -426,5 +438,111 @@ describe('profile settings', () => {
     await waitFor(() => expect(setting).not.toBeChecked());
     expect(saved).toEqual({ allowAnonymous: false });
     expect(screen.getByRole('checkbox', { name: 'Post anonymously' })).toBeEnabled();
+  });
+});
+
+function galleryComment(id: number, body: string, canDelete: boolean): PhotoComment {
+  return {
+    id, body, canDelete, createdAt: '2026-11-26T15:00:00Z',
+    author: { id: canDelete ? member.id : colleague.id, name: canDelete ? member.name : colleague.name, avatarUrl: null },
+  };
+}
+
+function pauseResponse() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+describe('photo interactions', () => {
+  it('shows nonzero thumbnail counts, likes optimistically, and rolls back a rate-limited unlike', async () => {
+    const user = userEvent.setup();
+    let photo = galleryPhoto(3, { likeCount: 2, commentCount: 1 });
+    mockProfile({ ...colleague, photos: [photo, galleryPhoto(4)] });
+    const liked = pauseResponse();
+    const unliked = pauseResponse();
+    server.use(
+      http.get('/api/users/:id', () => HttpResponse.json({ ...colleague, photos: [photo, galleryPhoto(4)] })),
+      http.put('/api/photos/3/like', async () => {
+        await liked.promise;
+        photo = { ...photo, likeCount: 4, likedByMe: true };
+        return HttpResponse.json({ likeCount: 4, likedByMe: true });
+      }),
+      http.delete('/api/photos/3/like', async () => {
+        await unliked.promise;
+        return HttpResponse.json({ code: 'rate_limited', message: 'Try again in a moment.' }, { status: 429 });
+      }),
+    );
+    renderProfile('9');
+
+    expect(await screen.findByLabelText('2 likes')).toHaveTextContent('♥ 2');
+    expect(screen.getByLabelText('1 comment')).toHaveTextContent('💬 1');
+    expect(screen.queryByLabelText('0 likes')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('0 comments')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Open photo 1' }));
+    const viewer = within(await screen.findByRole('dialog', { name: 'Lightbox' }));
+    await user.click(await viewer.findByRole('button', { name: 'Like' }));
+    expect(await viewer.findByRole('button', { name: 'Unlike' })).toBeDisabled();
+    expect(viewer.getByLabelText('3 likes')).toHaveTextContent('3');
+    liked.resolve();
+    expect(await viewer.findByLabelText('4 likes')).toHaveTextContent('4');
+    await waitFor(() => expect(viewer.getByRole('button', { name: 'Unlike' })).toBeEnabled());
+
+    await user.click(viewer.getByRole('button', { name: 'Unlike' }));
+    expect(await viewer.findByLabelText('3 likes')).toHaveTextContent('3');
+    unliked.resolve();
+    expect(await viewer.findByRole('alert')).toHaveTextContent('Try again in a moment.');
+    expect(viewer.getByRole('button', { name: 'Unlike' })).toBeEnabled();
+    expect(viewer.getByLabelText('4 likes')).toHaveTextContent('4');
+  });
+
+  it('lists comments, shows validation, appends and clears after posting, and removes deletable comments', async () => {
+    const user = userEvent.setup();
+    const readOnly = galleryComment(1, 'First\nline', false);
+    const posted = galleryComment(2, 'New comment', true);
+    let saved = [readOnly];
+    const refetched = pauseResponse();
+    mockProfile({ ...colleague, photos: [galleryPhoto(3, { commentCount: 1 })] });
+    server.use(
+      http.get('/api/photos/3/comments', async () => {
+        if (saved.length === 2) await refetched.promise;
+        return HttpResponse.json({ comments: saved });
+      }),
+      http.post('/api/photos/3/comments', async ({ request }) => {
+        const { body } = (await request.json()) as { body: string };
+        if (body !== posted.body) {
+          return HttpResponse.json({ code: 'too_long', message: 'Comment must be 1000 characters or fewer.' }, { status: 400 });
+        }
+        saved = [...saved, posted];
+        return HttpResponse.json(posted, { status: 201 });
+      }),
+      http.delete('/api/photos/3/comments/2', () => {
+        saved = [readOnly];
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderProfile('9');
+    await user.click(await screen.findByRole('button', { name: 'Open photo 1' }));
+    const viewer = within(await screen.findByRole('dialog', { name: 'Lightbox' }));
+    expect(await viewer.findByRole('link', { name: colleague.name })).toHaveAttribute('href', '/u/9');
+    expect(viewer.getByText('First line')).toHaveTextContent('First line');
+    expect(viewer.queryByRole('button', { name: /Delete comment/ })).not.toBeInTheDocument();
+
+    const input = viewer.getByRole('textbox', { name: 'Write a comment' });
+    await user.type(input, 'Oversized');
+    await user.click(viewer.getByRole('button', { name: 'Comment' }));
+    expect(await viewer.findByRole('alert')).toHaveTextContent('Comment must be 1000 characters or fewer.');
+    expect(input).toHaveValue('Oversized');
+    await user.clear(input);
+    await user.type(input, posted.body);
+    await user.click(viewer.getByRole('button', { name: 'Comment' }));
+
+    expect(await viewer.findByText(posted.body)).toBeInTheDocument();
+    expect(input).toHaveValue('');
+    expect(viewer.getByRole('heading', { name: 'Comments (2)' })).toBeInTheDocument();
+    refetched.resolve();
+    await user.click(viewer.getByRole('button', { name: `Delete comment by ${member.name}` }));
+    await waitFor(() => expect(viewer.queryByText(posted.body)).not.toBeInTheDocument());
+    expect(viewer.getByRole('heading', { name: 'Comments (1)' })).toBeInTheDocument();
   });
 });

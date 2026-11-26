@@ -69,6 +69,7 @@ function noteFor(
   event: RealtimeEvent,
   chats: ChatSummary[] | undefined,
 ): { title: string; body: string; chatId: number } | null {
+  if (event.type === 'chat.read') return null;
   if (event.type === 'chat.new') {
     return {
       title: event.data.partner.name,

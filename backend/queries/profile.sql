@@ -15,10 +15,14 @@ ON CONFLICT (user_id) DO UPDATE SET
 RETURNING user_id, hobby, music, movies, other, updated_at;
 
 -- name: ListUserPhotos :many
-SELECT id, user_id, path, created_at
+SELECT photos.id, photos.path,
+       (SELECT count(*) FROM photo_likes WHERE photo_likes.photo_id = photos.id) AS like_count,
+       CAST(EXISTS(SELECT 1 FROM photo_likes WHERE photo_likes.photo_id = photos.id
+                   AND photo_likes.user_id = sqlc.arg(viewer_id)) AS INTEGER) AS liked_by_me,
+       (SELECT count(*) FROM photo_comments WHERE photo_comments.photo_id = photos.id) AS comment_count
 FROM photos
-WHERE user_id = ?
-ORDER BY id;
+WHERE photos.user_id = sqlc.arg(user_id)
+ORDER BY photos.id;
 
 -- name: CountUserPhotos :one
 SELECT count(*) AS n

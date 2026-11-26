@@ -176,3 +176,35 @@ func TestProfileFieldsMigrationPreservesExistingData(t *testing.T) {
 		t.Fatalf("existing anonymous posts = %d", n)
 	}
 }
+
+func TestPhotoInteractionsMigrationPreservesExistingGallery(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "arc.db")
+	w, err := openPool(t.Context(), path, writePoolMax)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = w.Close() }()
+	provider, err := newProvider(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 20261119171100); err != nil {
+		t.Fatal(err)
+	}
+	insertUser(t, w, 1, "ada@example.com")
+	exec(t, w, "INSERT INTO photos (id, user_id, path, created_at) VALUES (10, 1, 'photo/ada.png', ?)", ts)
+
+	database, err := Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	if n := count(t, database.Reader(), "SELECT count(*) FROM photos WHERE id = 10 AND user_id = 1 AND path = 'photo/ada.png'"); n != 1 {
+		t.Fatalf("existing photo count = %d", n)
+	}
+	if n := count(t, database.Reader(), "SELECT (SELECT count(*) FROM photo_likes) + (SELECT count(*) FROM photo_comments)"); n != 0 {
+		t.Fatalf("initial photo interactions = %d", n)
+	}
+	exec(t, database.Writer(), "INSERT INTO photo_likes (photo_id, user_id, created_at) VALUES (10, 1, ?)", ts)
+	exec(t, database.Writer(), "INSERT INTO photo_comments (photo_id, author_id, body, created_at) VALUES (10, 1, 'hello', ?)", ts)
+}

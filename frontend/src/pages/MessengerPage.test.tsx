@@ -24,6 +24,7 @@ function chat(id: number, name: string, unreadCount: number, last: string | null
     partner: { id: id + 100, name, avatarUrl },
     lastMessage: last === null ? null : { body: last, kind: 'text', createdAt: '2026-11-11T12:00:00Z' },
     unreadCount,
+    partnerLastReadMessageId: 0,
   };
 }
 
@@ -305,11 +306,14 @@ describe('messenger', () => {
 
     const log = screen.getByRole('log', { name: 'Messages' });
     expect(await within(log).findByText('sending…')).toBeInTheDocument();
+    expect(within(log).queryByTitle('Sent')).not.toBeInTheDocument();
+    expect(within(log).queryByTitle('Read')).not.toBeInTheDocument();
     await act(async () => {
       release(HttpResponse.json(line(9, 'on its way', member.id), { status: 201 }));
     });
     await waitFor(() => expect(within(log).queryByText('sending…')).not.toBeInTheDocument());
     expect(within(log).getByText('on its way')).toBeInTheDocument();
+    expect(within(log).getByRole('img', { name: 'Sent' })).toHaveTextContent('✓');
   });
 
   it('keeps a newline on Shift+Enter and sends the trimmed text on Enter', async () => {
@@ -438,6 +442,46 @@ describe('messenger', () => {
     expect(system).toHaveAttribute('data-kind', 'system');
     expect(system).toHaveStyle({ fontStyle: 'italic' });
     expect(screen.getByText('hello')).not.toHaveAttribute('data-kind', 'system');
+  });
+
+  it('shows read receipts only on saved own text and updates them live without fetching', async () => {
+    let chatRequests = 0;
+    let messageRequests = 0;
+    server.use(
+      http.get('/api/chats', () => {
+        chatRequests += 1;
+        return HttpResponse.json([chat(5, 'Grace Hopper', 0, null)]);
+      }),
+      http.get('/api/chats/:id/messages', () => {
+        messageRequests += 1;
+        return HttpResponse.json({
+          messages: [
+            line(1, 'Partner text'),
+            line(2, 'Matched again ☕', null, 'system'),
+            line(3, 'At the cursor', member.id),
+            line(4, 'Past the cursor', member.id),
+          ],
+          partnerLastReadMessageId: 3,
+        });
+      }),
+    );
+    renderAt('/messenger/5');
+
+    const log = within(await screen.findByRole('log', { name: 'Messages' }));
+    expect(log.getByRole('img', { name: 'Read' })).toHaveTextContent(/^✓✓$/);
+    expect(log.getByRole('img', { name: 'Sent' })).toHaveTextContent(/^✓$/);
+    await waitFor(() => expect(clients.length).toBeGreaterThan(0));
+    act(() => {
+      push({ type: 'chat.read', data: { chatId: 5, lastReadMessageId: 4 } });
+    });
+    await waitFor(() => expect(log.getAllByRole('img', { name: 'Read' })).toHaveLength(2));
+    await act(async () => {
+      push({ type: 'chat.read', data: { chatId: 5, lastReadMessageId: 1 } });
+    });
+    expect(log.getAllByRole('img', { name: 'Read' })).toHaveLength(2);
+    expect(log.queryByRole('img', { name: 'Sent' })).not.toBeInTheDocument();
+    expect(chatRequests).toBe(1);
+    expect(messageRequests).toBe(1);
   });
 
   it('applies incoming events to the open thread and the other chat', async () => {

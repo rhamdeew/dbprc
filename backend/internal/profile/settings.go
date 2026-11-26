@@ -120,6 +120,10 @@ func (h *handlers) putWallSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func decodeSettings(w http.ResponseWriter, r *http.Request, body any) bool {
+	return decodeJSON(w, r, body, "Check your settings and try again.")
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, body any, invalidMessage string) bool {
 	decoder := json.NewDecoder(r.Body)
 	err := decoder.Decode(body)
 	if err == nil {
@@ -133,7 +137,7 @@ func decodeSettings(w http.ResponseWriter, r *http.Request, body any) bool {
 	if errors.As(err, &tooLarge) {
 		httpx.WriteError(w, http.StatusBadRequest, "too_large", "Request body is too large.")
 	} else {
-		writeInvalidSettings(w)
+		httpx.WriteError(w, http.StatusBadRequest, "invalid", invalidMessage)
 	}
 	return false
 }

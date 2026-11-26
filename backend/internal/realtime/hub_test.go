@@ -284,9 +284,12 @@ func TestChatPreviewDecryption(t *testing.T) {
 	t.Cleanup(hub.Close)
 	id := int64(99)
 	body, kind, created := crypt.Encrypt(42, "private preview"), "text", "2026-11-12T00:00:00Z"
-	row := sqlc.ListChatsForUserRow{ID: 42, LastMessageID: &id, LastBody: &body, LastKind: &kind, LastCreatedAt: &created}
+	row := sqlc.ListChatsForUserRow{ID: 42, PartnerLastReadMessageID: 20, LastMessageID: &id, LastBody: &body, LastKind: &kind, LastCreatedAt: &created}
 	if view := hub.toChatJSON(row); view.LastMessage == nil || view.LastMessage.Body != "private preview" {
 		t.Fatal("encrypted preview")
+	}
+	if view := hub.toChatJSON(row); view.PartnerLastReadMessageID != 20 {
+		t.Fatalf("partner cursor %d, want 20", view.PartnerLastReadMessageID)
 	}
 	body = "damaged"
 	if view := hub.toChatJSON(row); view.LastMessage == nil || view.LastMessage.Body != "[message unavailable]" {
