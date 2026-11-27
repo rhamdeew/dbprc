@@ -1,9 +1,16 @@
-import Lightbox, { useLightboxState } from 'yet-another-react-lightbox';
+import Lightbox, { CarouselModule, createModule, useLightboxState, type Plugin } from 'yet-another-react-lightbox';
 import 'yet-another-react-lightbox/styles.css';
 import { useProfile } from '../../api/profile';
 import type { ProfilePhoto } from '../../api/profile';
 import { PhotoInteractions } from './PhotoInteractions';
 import './PhotoViewer.css';
+
+// The carousel spans adjacent slides. Clip them at the edge of the image pane.
+const imagePane: Plugin = ({ addParent }) => {
+  addParent(CarouselModule.name, createModule('arc-image-pane', ({ children }) => (
+    <div className="arc-photo-image-pane">{children}</div>
+  )));
+};
 
 function SelectedPhoto({ userId, photos }: { userId: number; photos: ProfilePhoto[] }) {
   const { currentIndex } = useLightboxState();
@@ -22,6 +29,7 @@ export function PhotoViewer({ userId, index, setIndex }: {
   return (
     <Lightbox
       className="arc-photo-viewer"
+      plugins={[imagePane]}
       open
       close={() => setIndex(-1)}
       index={index}
