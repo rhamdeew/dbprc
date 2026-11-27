@@ -270,6 +270,100 @@ test('Bob likes and comments on Alice’s photo and Alice removes the comment', 
   await expect(gallery.getByLabel('1 comment', { exact: true })).toHaveCount(0);
 });
 
+test('the desktop gallery fits portrait and landscape photos beside compact controls', async ({}, testInfo) => {
+  const originalViewport = alicePage.viewportSize();
+  const viewport = { width: 1280, height: 800 };
+  await alicePage.setViewportSize(viewport);
+  for (const { name, width, height } of [
+    { name: 'portrait', width: 600, height: 1200 },
+    { name: 'landscape', width: 1400, height: 500 },
+  ]) {
+    const encoded = await alicePage.evaluate(({ width, height }) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d')!;
+      context.fillStyle = '#4c6aaa';
+      context.fillRect(0, 0, width, height);
+      context.fillStyle = '#b4c2db';
+      context.fillRect(0, 0, width, height / 4);
+      return canvas.toDataURL('image/png').slice('data:image/png;base64,'.length);
+    }, { width, height });
+    const upload = alicePage.waitForResponse((response) =>
+      response.url().endsWith('/api/me/photos') && response.request().method() === 'POST',
+    );
+    await alicePage.getByLabel('Add a photo').setInputFiles({
+      name: `${name}.png`, mimeType: 'image/png', buffer: Buffer.from(encoded, 'base64'),
+    });
+    expect((await upload).status()).toBe(201);
+  }
+
+  await alicePage.getByRole('button', { name: 'Open photo 2' }).click();
+  const viewer = alicePage.getByRole('dialog', { name: 'Lightbox' });
+  const panel = viewer.getByRole('region', { name: 'Photo reactions and comments' });
+  const imageWidth = viewport.width * 0.75;
+  await expect.poll(() => panel.boundingBox()).toEqual({
+    x: imageWidth, y: 0, width: viewport.width - imageWidth, height: viewport.height,
+  });
+
+  const like = panel.getByRole('button', { name: 'Like', exact: true });
+  const submit = panel.getByRole('button', { name: 'Comment', exact: true });
+  for (const button of [like, submit]) {
+    await expect(button).toBeEnabled();
+    await expect.poll(async () => (await button.boundingBox())?.height).toBeLessThanOrEqual(32);
+  }
+  const commentBox = panel.getByRole('textbox', { name: 'Write a comment' });
+  await commentBox.focus();
+  await alicePage.keyboard.press('Shift+Tab');
+  await expect(like).toBeFocused();
+  await expect(like).toHaveCSS('outline-style', 'solid');
+  await alicePage.keyboard.press('Tab');
+  await alicePage.keyboard.press('Tab');
+  await expect(submit).toBeFocused();
+  await expect(submit).toHaveCSS('outline-style', 'solid');
+
+  for (const { index, ratio, fillAxis } of [
+    { index: 2, ratio: 0.5, fillAxis: 'height' },
+    { index: 3, ratio: 2.8, fillAxis: 'width' },
+  ] as const) {
+    const image = viewer.getByRole('img', { name: `Photo ${index} of 3` });
+    await expect(image).toBeVisible();
+    await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+    await expect(image).toHaveCSS('object-fit', 'contain');
+    await expect.poll(async () => {
+      const box = await image.boundingBox();
+      if (!box) return Infinity;
+      const available = fillAxis === 'height' ? viewport.height : imageWidth;
+      return Math.max(
+        Math.abs(box.width - box.height * ratio),
+        Math.abs(box.x + box.width / 2 - imageWidth / 2),
+        Math.abs(box.y + box.height / 2 - viewport.height / 2),
+        box.width - imageWidth,
+        box.height - viewport.height,
+        // The lightbox reserves a little padding on each edge.
+        Math.max(0, available - box[fillAxis] - 40),
+      );
+    }).toBeLessThanOrEqual(1);
+    await viewer.screenshot({ path: testInfo.outputPath(`gallery-${fillAxis === 'height' ? 'portrait' : 'landscape'}.png`) });
+    if (index === 2) {
+      const next = viewer.getByRole('button', { name: 'Next' });
+      await expect.poll(async () => {
+        const box = await next.boundingBox();
+        return box ? box.x + box.width : Infinity;
+      }).toBeLessThanOrEqual(imageWidth);
+      await next.click();
+    }
+  }
+
+  await viewer.getByRole('button', { name: 'Previous' }).click();
+  await expect(viewer.getByRole('img', { name: 'Photo 2 of 3' })).toBeVisible();
+  await alicePage.keyboard.press('ArrowRight');
+  await expect(viewer.getByRole('img', { name: 'Photo 3 of 3' })).toBeVisible();
+  await alicePage.keyboard.press('Escape');
+  await expect(viewer).toBeHidden();
+  if (originalViewport) await alicePage.setViewportSize(originalViewport);
+});
+
 test('Bob posts an anonymous drawing on Alice\'s wall and Alice deletes it', async () => {
   // Mantine Autocomplete exposes a combobox. The visible label is the placeholder.
   const search = bobPage.getByRole('search').getByRole('combobox');
