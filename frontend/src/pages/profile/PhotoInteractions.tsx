@@ -1,4 +1,4 @@
-import { Avatar, Box, Button, Group, Stack, Text, Textarea } from '@mantine/core';
+import { ActionIcon, Avatar, Box, Button, Group, Stack, Text, Textarea } from '@mantine/core';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { ApiError } from '../../api/client';
@@ -18,16 +18,17 @@ export function PhotoInteractions({ photo, userId }: { photo: ProfilePhoto; user
   return (
     <section className="arc-photo-interactions" aria-label="Photo reactions and comments">
       <Stack gap="sm">
-        <Group>
-          <Button
+        <Group gap="xs">
+          <ActionIcon
             type="button"
             variant="light"
+            size="md"
             aria-label={photo.likedByMe ? 'Unlike' : 'Like'}
             disabled={likePending}
             onClick={() => like.mutate(!photo.likedByMe)}
           >
             <span aria-hidden="true">{photo.likedByMe ? '♥' : '♡'}</span>
-          </Button>
+          </ActionIcon>
           <Text size="sm" aria-label={`${photo.likeCount} ${photo.likeCount === 1 ? 'like' : 'likes'}`}>{photo.likeCount}</Text>
         </Group>
         {like.isError && <Text role="alert">{errorMessage(like.error, 'Could not update like.')}</Text>}
@@ -78,7 +79,7 @@ export function PhotoInteractions({ photo, userId }: { photo: ProfilePhoto; user
               }}
             />
             {add.isError && <Text role="alert">{errorMessage(add.error, 'Could not post comment.')}</Text>}
-            <Button type="submit" loading={add.isPending} disabled={!comments.data}>Comment</Button>
+            <Button type="submit" size="xs" loading={add.isPending} disabled={!comments.data}>Comment</Button>
           </Stack>
         </form>
       </Stack>
